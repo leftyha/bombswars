@@ -232,12 +232,23 @@ function safePoint(radius=.7, avoidPlayer=0){
   }
   return {x:rnd(-12,12), z:rnd(-10,10)};
 }
+
+function addWallSegments(){
+  const thickness=1.6, h=7.2, hp=999, seg=8;
+  for(let x=-WORLD_W/2+seg/2; x<WORLD_W/2; x+=seg){
+    addObstacle(x,-WORLD_D/2,seg+.06,thickness,h,"wall",hp);
+    addObstacle(x, WORLD_D/2,seg+.06,thickness,h,"wall",hp);
+  }
+  for(let z=-WORLD_D/2+seg/2; z<WORLD_D/2; z+=seg){
+    addObstacle(-WORLD_W/2,z,thickness,seg+.06,h,"wall",hp);
+    addObstacle( WORLD_W/2,z,thickness,seg+.06,h,"wall",hp);
+  }
+}
+
 function buildObstacles(){
-  // outer walls
-  addObstacle(0,-WORLD_D/2,WORLD_W,1.6,7.2,"wall",999);
-  addObstacle(0, WORLD_D/2,WORLD_W,1.6,7.2,"wall",999);
-  addObstacle(-WORLD_W/2,0,1.6,WORLD_D,7.2,"wall",999);
-  addObstacle( WORLD_W/2,0,1.6,WORLD_D,7.2,"wall",999);
+  // outer walls are segmented so distant/background walls do not collapse into
+  // huge polygons at low render scales or at grazing camera angles.
+  addWallSegments();
 
   const presets = [
     [-42,-24,14,3,3.2,"container",180],[-30,-12,3,16,3.4,"concrete",220],[-15,-32,12,3,3.2,"container",180],
@@ -250,7 +261,7 @@ function buildObstacles(){
   ];
   for(const p of presets) addObstacle(...p);
 
-  let extra = Math.max(0, settings.obstacles - presets.length - 4);
+  let extra = Math.max(0, settings.obstacles - presets.length - 50);
   for(let i=0;i<extra;i++){
     const type = Math.random()<.45 ? "crate" : Math.random()<.65 ? "barrel" : "sand";
     const w=rnd(1.4,3.4), d=rnd(1.4,3.4);
@@ -331,8 +342,8 @@ function depthOf(pts){ let d=0; for(const p of pts)d+=cameraSpace(p).z; return d
 function drawPoly(pts,color,stroke=null){
   const clipped=clipCameraPoly(pts.map(cameraSpace));
   if(clipped.length<3) return;
-  const ps=clipped.map(projectCamera);
-  if(ps.some(p=>!p)) return;
+  const ps=clipped.map(projectCamera).filter(Boolean);
+  if(ps.length<3) return;
   ctx.beginPath(); ctx.moveTo(ps[0].x,ps[0].y);
   for(let i=1;i<ps.length;i++) ctx.lineTo(ps[i].x,ps[i].y);
   ctx.closePath(); ctx.fillStyle=color; ctx.fill();
@@ -658,11 +669,23 @@ function render(){
 }
 function drawBackground(){
   const sky=ctx.createLinearGradient(0,0,0,H);
-  sky.addColorStop(0,"#89bde7"); sky.addColorStop(.55,"#c9dceb"); sky.addColorStop(1,"#e6edf2");
+  sky.addColorStop(0,"#6ea7d6"); sky.addColorStop(.48,"#c8dceb"); sky.addColorStop(.72,"#ead6ad"); sky.addColorStop(1,"#66706b");
   ctx.fillStyle=sky; ctx.fillRect(0,0,W,H);
 
-  // clouds
-  ctx.fillStyle="rgba(255,255,255,.18)";
+  const horizon=H*(.52+cam.pitch*.28);
+  const haze=ctx.createLinearGradient(0,horizon-80,0,horizon+120);
+  haze.addColorStop(0,"rgba(255,255,255,0)"); haze.addColorStop(.55,"rgba(255,232,181,.28)"); haze.addColorStop(1,"rgba(18,24,28,.32)");
+  ctx.fillStyle=haze; ctx.fillRect(0,horizon-90,W,230);
+
+  // soft background silhouettes make the arena feel enclosed even when looking at the far wall.
+  ctx.fillStyle="rgba(38,52,59,.22)";
+  for(let i=0;i<9;i++){
+    const x=(i*173 - (cam.yaw*70)%173)-110;
+    const w=80+(i%3)*42, h=70+(i%4)*24;
+    ctx.fillRect(x,horizon-h,w,h);
+  }
+
+  ctx.fillStyle="rgba(255,255,255,.20)";
   for(let i=0;i<8;i++){
     const x=(i*271 + performance.now()*0.006)% (W+260)-130;
     ctx.beginPath(); ctx.ellipse(x,70+i*23,150,20,0,0,TAU); ctx.fill();
@@ -670,10 +693,10 @@ function drawBackground(){
 }
 function drawGround(){
   const pts=[{x:-WORLD_W/2,y:0,z:-WORLD_D/2},{x:WORLD_W/2,y:0,z:-WORLD_D/2},{x:WORLD_W/2,y:0,z:WORLD_D/2},{x:-WORLD_W/2,y:0,z:WORLD_D/2}];
-  drawPoly(pts,"#5b625f");
+  drawPoly(pts,"#59615d");
 
   // Piso real de arena: loseta de concreto, sin franjas tipo fondo corrido.
-  for(let gx=-56;gx<=56;gx+=4) drawLine3D({x:gx,y:.02,z:-44},{x:gx,y:.02,z:44},"rgba(255,255,255,.085)",1);
+  for(let gx=-56;gx<=56;gx+=4) drawLine3D({x:gx,y:.02,z:-44},{x:gx,y:.02,z:44},"rgba(255,255,255,.075)",1);
   for(let gz=-44;gz<=44;gz+=4) drawLine3D({x:-56,y:.02,z:gz},{x:56,y:.02,z:gz},"rgba(255,255,255,.085)",1);
   for(let gx=-56;gx<=56;gx+=16) drawLine3D({x:gx,y:.025,z:-44},{x:gx,y:.025,z:44},"rgba(0,0,0,.16)",2);
   for(let gz=-44;gz<=44;gz+=16) drawLine3D({x:-56,y:.025,z:gz},{x:56,y:.025,z:gz},"rgba(0,0,0,.16)",2);
@@ -682,7 +705,7 @@ function circleGround(cx,cz,r,n=20,y=.02){
   const pts=[]; for(let i=0;i<n;i++){const a=i/n*TAU;pts.push({x:cx+Math.sin(a)*r,y,z:cz+Math.cos(a)*r});} return pts;
 }
 function colorFor(o){
-  const m={wall:"#3f4a55",container:"#526b84",concrete:"#96948c",sand:"#a48759",crate:"#8b613b",barrel:"#b96638",ruin:"#77756f",tower:"#6b5a42"};
+  const m={wall:"#56616c",container:"#526b84",concrete:"#96948c",sand:"#a48759",crate:"#8b613b",barrel:"#b96638",ruin:"#77756f",tower:"#6b5a42"};
   return m[o.type]||"#777";
 }
 function shade(hex,m){
