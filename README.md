@@ -1,6 +1,6 @@
 # BombStick Arena FPS Optimizado
 
-Preview jugable pseudo‑3D optimizada en Canvas.
+Preview jugable pseudo‑3D optimizada en Canvas, con música y efectos de sonido procedurales mediante Web Audio API.
 
 ## Cómo jugar
 Abre `index.html` en un navegador moderno.
@@ -14,7 +14,7 @@ Controles:
 - 1-5: elegir bomba
 - P: abrir/cerrar Performance Lab
 - R: reiniciar
-- Esc: pausa / liberar mouse
+- Esc: pausa / liberar mouse / pausa o reanuda la música
 
 ## Plan multijugador
 
@@ -23,6 +23,8 @@ La planificación para evolucionar el prototipo hacia salas online, escalado tip
 ## Diseño técnico
 Esta versión usa Canvas pseudo‑3D en lugar de WebGL pesado.  
 Incluye `libs/anime-lite.js`, un tweener local estilo anime.js para animaciones simples de mano/HUD sin depender de CDN.
+
+El audio no necesita archivos externos: `js/game.js` sintetiza música de combate y SFX con Web Audio API para lanzamiento, bombas vacías, packs, dash, daño, KO, victoria/derrota, explosiones, fuego y hielo.
 
 Los personajes usan un rig procedural inspirado en LoongBones/DragonBones (huesos de cabeza, torso, brazos y piernas) sobre Canvas para ganar movimiento natural sin cargar un runtime WebGL pesado. Las explosiones combinan blast, onda expansiva, chispas, humo y escombros; además, la cámara usa trauma amortiguado por distancia para evitar temblores permanentes cuando hay muchas bombas.
 
