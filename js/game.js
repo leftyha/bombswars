@@ -66,7 +66,8 @@ const fmt = t => {
 let W = innerWidth, H = innerHeight, renderScale = 0.75;
 let playing=false, paused=false, gameOver=false, mouseLocked=false;
 let last=performance.now(), fpsTime=0, fpsFrames=0, fps=0, accumulator=0;
-let matchTime=420, shake=0, hurtFlash=0;
+let matchTime=420, hurtFlash=0;
+const shakeState = { trauma:0, x:0, y:0, z:0, t:0 };
 const keys = {};
 
 const settings = {
@@ -206,7 +207,7 @@ addEventListener("keyup", e => keys[e.code]=false);
 // ---------- World generation ----------
 function reset(){
   syncProfileSettings();
-  playing=true; paused=false; gameOver=false; matchTime=420; shake=0;
+  playing=true; paused=false; gameOver=false; matchTime=420; resetShake();
   Object.assign(player,{x:-45,z:-34,yaw:.55,pitch:0,vx:0,vz:0,hp:100,st:100,sel:0,cd:0,dash:0,kills:0,score:0,ammo:[0,0,0,0,0],frozen:0,burning:0,name:settings.playerName,color:settings.playerSkin,dead:false});
   obstacles=[]; bots=[]; packs=[]; bombs=[]; particles=[]; craters=[]; zones=[]; texts=[];
   buildObstacles();
@@ -272,7 +273,7 @@ function buildBots(){
       name:names[i%names.length]+(i>=names.length?i:""),
       x,z,vx:0,vz:0,r:.58,hp: i%7===0?130:80, maxHp:i%7===0?130:80,
       speed:i%7===0?3.4:rnd(4.2,6.5), color:["#ff5d4d","#70d6ff","#ffd24d","#ff6a20","#91e8ff"][type],
-      ammo:[0,0,0,0,0], cd:rnd(1.2,2.8), path:rnd(0,TAU), dead:false, frozen:0, burning:0, stun:0, anim:rnd(0,TAU), throwAnim:0
+      ammo:[0,0,0,0,0], cd:rnd(1.2,2.8), path:rnd(0,TAU), dead:false, frozen:0, burning:0, stun:0, anim:rnd(0,TAU), throwAnim:0, yaw:0, lean:0
     });
   }
 }
@@ -287,10 +288,35 @@ function buildGrass(){
   for(let i=0;i<230;i++) grass.push({x:rnd(-54,54),z:rnd(-42,42),h:rnd(.35,.9),c:Math.random()<.55?"#6f8b43":"#526f37"});
 }
 
+
+function easeOut(t){ return 1 - Math.pow(1 - t, 3); }
+function angleLerp(a,b,t){
+  let d=((b-a+Math.PI)%(TAU))-Math.PI;
+  if(d<-Math.PI) d+=TAU;
+  return a+d*t;
+}
+function resetShake(){
+  shakeState.trauma=0; shakeState.x=0; shakeState.y=0; shakeState.z=0; shakeState.t=0;
+}
+function addCameraTrauma(amount,x,z){
+  const nearPlayer = 1 - clamp(dist(x,z,player.x,player.z)/42,0,1);
+  shakeState.trauma = clamp(shakeState.trauma + amount*(.35 + nearPlayer*.65), 0, .85);
+}
+function updateCameraShake(){
+  shakeState.t += .37;
+  shakeState.trauma *= .90;
+  if(shakeState.trauma < .006){ resetShake(); return; }
+  const amp = shakeState.trauma * shakeState.trauma;
+  shakeState.x = Math.sin(shakeState.t*2.1) * amp * .34 + Math.sin(shakeState.t*5.7) * amp * .08;
+  shakeState.y = Math.cos(shakeState.t*2.6) * amp * .16;
+  shakeState.z = Math.cos(shakeState.t*1.7) * amp * .34 + Math.sin(shakeState.t*4.3) * amp * .08;
+}
+
 // ---------- Projection ----------
 function setupCamera(){
   cam.x=player.x; cam.y=EYE; cam.z=player.z; cam.yaw=player.yaw; cam.pitch=player.pitch;
-  if(shake>0){ cam.x+=rnd(-shake,shake)*.025; cam.y+=rnd(-shake,shake)*.012; cam.z+=rnd(-shake,shake)*.025; }
+  updateCameraShake();
+  cam.x += shakeState.x; cam.y += shakeState.y; cam.z += shakeState.z;
 }
 function cameraSpace(p){
   const dx=p.x-cam.x, dy=p.y-cam.y, dz=p.z-cam.z;
@@ -394,7 +420,9 @@ function updateBots(dt){
   for(const b of bots){
     if(b.dead) continue;
     b.cd-=dt; b.throwAnim=Math.max(0,b.throwAnim-dt); b.stun=Math.max(0,b.stun-dt);
-    b.frozen=Math.max(0,b.frozen-dt); b.burning=Math.max(0,b.burning-dt); b.anim+=dt;
+    b.frozen=Math.max(0,b.frozen-dt); b.burning=Math.max(0,b.burning-dt);
+    const moveSpeed = Math.hypot(b.vx,b.vz);
+    b.anim += dt * (0.9 + moveSpeed * 0.32);
     if(b.burning>0) b.hp-=8*dt;
     if(b.hp<=0){ killBot(b); continue; }
 
@@ -418,6 +446,9 @@ function updateBots(dt){
     b.vz+=Math.cos(yaw)*speed*6*dt;
     b.vx*=Math.pow(.12,dt); b.vz*=Math.pow(.12,dt);
     b.x+=b.vx*dt; b.z+=b.vz*dt; collide(b);
+    const desiredYaw = Math.atan2(b.vx, b.vz);
+    if(moveSpeed > .08) b.yaw = angleLerp(b.yaw || desiredYaw, desiredYaw, Math.min(1, dt * 9));
+    b.lean = lerp(b.lean || 0, clamp(moveSpeed / Math.max(1, b.speed), 0, 1), Math.min(1, dt * 8));
 
     for(const p of packs) if(!p.dead&&dist(b.x,b.z,p.x,p.z)<1.35) collectPack(p,b);
 
@@ -512,9 +543,11 @@ function explode(b){
   if(t.id==="ice") zones.push({kind:"ice",x:b.x,z:b.z,r:t.rad,life:5.8,max:5.8});
 }
 function spawnExplosion(x,y,z,t){
-  particles.push({x,y,z,vx:0,vy:0,vz:0,type:"blast",color:t.color,r:0,maxR:t.rad,life:.5,max:.5});
-  spawnParticles(x,y,z,Math.floor(70*settings.particles),t.id==="fire"?"fire":t.id==="ice"?"ice":"boom",t.color);
-  shake=Math.max(shake,Math.min(24,t.rad*1.35));
+  particles.push({x,y,z,vx:0,vy:0,vz:0,type:"blast",color:t.color,r:0,maxR:t.rad,life:.42,max:.42});
+  particles.push({x,y:.04,z,vx:0,vy:0,vz:0,type:"shockwave",color:t.color,r:0,maxR:t.rad*1.35,life:.55,max:.55});
+  spawnParticles(x,y,z,Math.floor(52*settings.particles),t.id==="fire"?"fire":t.id==="ice"?"ice":"boom",t.color);
+  spawnParticles(x,.12,z,Math.floor(34*settings.particles),"smoke",t.color);
+  addCameraTrauma(Math.min(.42, t.rad * .035), x, z);
 }
 function applyDamage(x,z,r,dmg,owner,type){
   const targets=[player,...bots.filter(b=>!b.dead)];
@@ -564,15 +597,22 @@ function updateZones(dt){
 function spawnParticles(x,y,z,n,type,color=null){
   n=Math.floor(n*settings.particles);
   for(let i=0;i<n;i++){
-    const a=rnd(0,TAU), sp= type==="spark"?rnd(3,9):type==="dust"?rnd(1,5):rnd(2,17);
-    particles.push({x,y,z,vx:Math.sin(a)*sp,vy:type==="dust"?rnd(.5,2):rnd(1,9),vz:Math.cos(a)*sp,type,color,life:type==="dust"?rnd(.45,1.1):rnd(.35,1.6),max:1.6,size:type==="debris"?rnd(.08,.22):rnd(.05,.18),rot:rnd(0,TAU)});
+    const a=rnd(0,TAU);
+    const sp= type==="spark"?rnd(3,9):type==="dust"?rnd(1,5):type==="smoke"?rnd(.45,3.8):rnd(2,17);
+    const life=type==="dust"?rnd(.45,1.1):type==="smoke"?rnd(.9,2.2):rnd(.35,1.6);
+    particles.push({x,y,z,vx:Math.sin(a)*sp,vy:type==="dust"?rnd(.5,2):type==="smoke"?rnd(.35,2.6):rnd(1,9),vz:Math.cos(a)*sp,type,color,life,max:life,size:type==="debris"?rnd(.08,.22):type==="smoke"?rnd(.22,.65):rnd(.05,.18),rot:rnd(0,TAU),grow:rnd(.7,1.45)});
   }
 }
 function updateParticles(dt){
   for(const p of particles){
     p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.z+=p.vz*dt; p.rot+=dt*3;
-    if(p.type==="blast"){p.r=lerp(p.r,p.maxR,.22);}
-    else {p.vy-=10.5*dt; p.vx*=Math.pow(.48,dt); p.vz*=Math.pow(.48,dt);}
+    if(p.type==="blast" || p.type==="shockwave"){p.r=lerp(p.r,p.maxR,p.type==="shockwave"?.30:.22);}
+    else {
+      const gravity = p.type==="smoke" ? -1.1 : 10.5;
+      p.vy-=gravity*dt;
+      const drag = p.type==="smoke" ? .22 : .48;
+      p.vx*=Math.pow(drag,dt); p.vz*=Math.pow(drag,dt);
+    }
   }
   particles=particles.filter(p=>p.life>0);
   for(const c of craters)c.life-=dt;
@@ -762,24 +802,29 @@ function drawBot(b){
   const feet=project({x:b.x,y:0,z:b.z}), head=project({x:b.x,y:1.95,z:b.z});
   if(!feet||!head)return;
   const height=clamp(feet.y-head.y,18,230), scale=height/92, cx=head.x, top=head.y;
-  const walk=Math.sin(b.anim*8*b.speed*.2)*(b.frozen>0?.2:1);
+  const stride=Math.sin(b.anim*7.4)*(b.frozen>0?.22:1)*(b.lean||0);
+  const bounce=Math.abs(Math.sin(b.anim*7.4))*5*scale*(b.lean||0);
+  const bodyLean=Math.sin((b.yaw||0)-cam.yaw)*7*scale*(b.lean||0);
+  const throwPose=b.throwAnim>0?easeOut(clamp(b.throwAnim/.35,0,1))*24*scale:0;
   ctx.save();
   const sh=project({x:b.x,y:.02,z:b.z});
   if(sh){ctx.fillStyle="rgba(0,0,0,.30)";ctx.beginPath();ctx.ellipse(sh.x,sh.y,22*scale,7*scale,0,0,TAU);ctx.fill();}
-  ctx.lineCap="round"; ctx.strokeStyle="#050505"; ctx.lineWidth=Math.max(3,7*scale);
-  const headR=13*scale, neckY=top+headR*2.1, hipY=top+height*.62, footY=feet.y;
-  const throwPose=b.throwAnim>0?18*scale:0;
+  const headR=13*scale, neckY=top+headR*2.1+bounce, chestY=top+height*.38+bounce, hipY=top+height*.64+bounce, footY=feet.y;
+  const shoulderL={x:cx-13*scale+bodyLean,y:chestY}, shoulderR={x:cx+13*scale+bodyLean,y:chestY};
+  const hipL={x:cx-8*scale-bodyLean*.25,y:hipY}, hipR={x:cx+8*scale-bodyLean*.25,y:hipY};
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  ctx.strokeStyle="#050505"; ctx.lineWidth=Math.max(3,7*scale);
   ctx.beginPath();
-  ctx.moveTo(cx,neckY);ctx.lineTo(cx,hipY);
-  ctx.moveTo(cx,top+height*.34);ctx.lineTo(cx-21*scale-walk*8,top+height*.45);
-  ctx.moveTo(cx,top+height*.34);ctx.lineTo(cx+24*scale+throwPose,top+height*.40-throwPose*.5);
-  ctx.moveTo(cx,hipY);ctx.lineTo(cx-17*scale+walk*10,footY);
-  ctx.moveTo(cx,hipY);ctx.lineTo(cx+17*scale-walk*10,footY);
+  ctx.moveTo(cx+bodyLean*.45,neckY);ctx.quadraticCurveTo(cx+bodyLean,chestY,cx-bodyLean*.25,hipY);
+  ctx.moveTo(shoulderL.x,shoulderL.y);ctx.quadraticCurveTo(cx-25*scale-stride*13,top+height*.48,cx-19*scale-stride*20,top+height*.58);
+  ctx.moveTo(shoulderR.x,shoulderR.y);ctx.quadraticCurveTo(cx+26*scale+throwPose+stride*8,top+height*.46-throwPose*.55,cx+21*scale+throwPose,top+height*.58-throwPose*.35);
+  ctx.moveTo(hipL.x,hipL.y);ctx.quadraticCurveTo(cx-18*scale+stride*18,top+height*.80,cx-17*scale-stride*11,footY);
+  ctx.moveTo(hipR.x,hipR.y);ctx.quadraticCurveTo(cx+18*scale-stride*18,top+height*.80,cx+17*scale+stride*11,footY);
   ctx.stroke();
-  ctx.fillStyle="#050505";ctx.beginPath();ctx.arc(cx,top+headR,headR,0,TAU);ctx.fill();
-  ctx.strokeStyle=b.frozen>0?"#91e8ff":b.burning>0?"#ff6a20":b.color;ctx.lineWidth=Math.max(2,3*scale);ctx.beginPath();ctx.arc(cx,top+headR,headR+2*scale,-.75,.75);ctx.stroke();
-  ctx.fillStyle="#252b31";ctx.fillRect(cx-10*scale,top+height*.39,20*scale,23*scale);
-  if(b.ammo.some(v=>v>0)){ctx.fillStyle="#111";ctx.beginPath();ctx.arc(cx+30*scale+throwPose,top+height*.39-throwPose*.5,6*scale,0,TAU);ctx.fill();}
+  ctx.fillStyle="#252b31";ctx.beginPath();ctx.roundRect(cx-11*scale+bodyLean*.5,chestY-4*scale,22*scale,25*scale,5*scale);ctx.fill();
+  ctx.fillStyle="#050505";ctx.beginPath();ctx.arc(cx+bodyLean*.65,top+headR+bounce*.4,headR,0,TAU);ctx.fill();
+  ctx.strokeStyle=b.frozen>0?"#91e8ff":b.burning>0?"#ff6a20":b.color;ctx.lineWidth=Math.max(2,3*scale);ctx.beginPath();ctx.arc(cx+bodyLean*.65,top+headR+bounce*.4,headR+2*scale,-.75,.75);ctx.stroke();
+  if(b.ammo.some(v=>v>0)){ctx.fillStyle="#111";ctx.beginPath();ctx.arc(cx+29*scale+throwPose,top+height*.56-throwPose*.35,6*scale,0,TAU);ctx.fill();}
   ctx.fillStyle="rgba(0,0,0,.75)";ctx.fillRect(cx-26*scale,top-10*scale,52*scale,5*scale);
   ctx.fillStyle="#ff5d4d";ctx.fillRect(cx-26*scale,top-10*scale,52*scale*clamp(b.hp/b.maxHp,0,1),5*scale);
   ctx.fillStyle="rgba(255,255,255,.88)";ctx.font=`900 ${Math.max(9,11*scale)}px sans-serif`;ctx.textAlign="center";ctx.fillText(b.name,cx,top-15*scale);
@@ -792,14 +837,25 @@ function drawParticle(p){
   if(p.type==="blast"){
     const s=p.r*pr.scale;
     const g=ctx.createRadialGradient(pr.x,pr.y,0,pr.x,pr.y,s);
-    g.addColorStop(0,"#fff9c6"); g.addColorStop(.25,p.color||"#ffbd41"); g.addColorStop(1,"rgba(0,0,0,0)");
+    g.addColorStop(0,"#fff9c6"); g.addColorStop(.18,p.color||"#ffbd41"); g.addColorStop(.55,"rgba(255,120,26,.28)"); g.addColorStop(1,"rgba(0,0,0,0)");
     ctx.fillStyle=g;ctx.beginPath();ctx.arc(pr.x,pr.y,s,0,TAU);ctx.fill();
+  }else if(p.type==="shockwave"){
+    const s=p.r*pr.scale;
+    ctx.globalAlpha=alpha*.55; ctx.strokeStyle=p.color||"#ffd24d"; ctx.lineWidth=Math.max(2,5*alpha);
+    ctx.beginPath();ctx.ellipse(pr.x,pr.y,s,s*.22,0,0,TAU);ctx.stroke();
   }else if(p.type==="spark"){
     ctx.strokeStyle=p.color||"#ffd24d";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(pr.x,pr.y);ctx.lineTo(pr.x-p.vx*pr.scale*.04,pr.y+p.vy*pr.scale*.04);ctx.stroke();
   }else{
-    ctx.fillStyle=p.color || (p.type==="ice"?"#91e8ff":p.type==="fire"?"#ff6a20":p.type==="debris"?"#654a35":"#b9b9b9");
-    const s=Math.max(2,p.size*pr.scale);
-    ctx.translate(pr.x,pr.y);ctx.rotate(p.rot);ctx.fillRect(-s/2,-s/2,s,s);
+    if(p.type==="smoke"){
+      const s=Math.max(4,p.size*pr.scale*(p.grow||1)*(1.2-alpha*.35));
+      const g=ctx.createRadialGradient(pr.x,pr.y,0,pr.x,pr.y,s);
+      g.addColorStop(0,"rgba(58,55,52,.55)"); g.addColorStop(1,"rgba(35,35,35,0)");
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(pr.x,pr.y,s,0,TAU);ctx.fill();
+    }else{
+      ctx.fillStyle=p.color || (p.type==="ice"?"#91e8ff":p.type==="fire"?"#ff6a20":p.type==="debris"?"#654a35":"#b9b9b9");
+      const s=Math.max(2,p.size*pr.scale);
+      ctx.translate(pr.x,pr.y);ctx.rotate(p.rot);ctx.fillRect(-s/2,-s/2,s,s);
+    }
   }
   ctx.restore();
 }
