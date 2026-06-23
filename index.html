@@ -26,12 +26,29 @@
       <div class="card">
         <b>Packs de bombas</b><br>
         Frag +10 · Sticky +5 · Trap +3 · Incendiaria +3 · Congelante +1<br>
-        Los bots también recogen packs y pelean solo con bombas.
+        Los bots también recogen packs y pelean solo con bombas. Si un jugador o bot cae, queda eliminado hasta la siguiente ronda.
       </div>
     </div>
 
+    <div class="grid profile">
+      <label>Tu nombre <input id="playerName" type="text" maxlength="16" value="Player" placeholder="Tu nombre"></label>
+      <label>Skin <select id="playerSkin">
+        <option value="#050505">Clásica</option>
+        <option value="#1f6feb">Azul</option>
+        <option value="#7dff75">Verde</option>
+        <option value="#ff5d4d">Roja</option>
+        <option value="#ffd24d">Dorada</option>
+      </select></label>
+      <label>Color interfaz <select id="uiAccent">
+        <option value="#ffd24d">Dorado</option>
+        <option value="#70d6ff">Cian</option>
+        <option value="#7dff75">Verde</option>
+        <option value="#ff5d4d">Rojo</option>
+      </select></label>
+    </div>
+
     <div class="grid settings">
-      <label>Jugadores/Bots <input id="startBots" type="range" min="0" max="40" value="14"><b id="startBotsVal">14</b></label>
+      <label>Bots de la ronda <input id="startBots" type="range" min="0" max="40" value="14"><b id="startBotsVal">14</b></label>
       <label>Obstáculos <input id="startObs" type="range" min="20" max="150" value="70"><b id="startObsVal">70</b></label>
       <label>Packs <input id="startPacks" type="range" min="10" max="80" value="36"><b id="startPacksVal">36</b></label>
       <label>Render scale <input id="startScale" type="range" min="45" max="100" value="75"><b id="startScaleVal">75%</b></label>
@@ -80,7 +97,7 @@
     <div id="message"></div>
   </div>
 
-  <div id="hint">Empiezas sin bombas · recoge packs · obstáculos y piso se rompen visualmente · P = Performance Lab</div>
+  <div id="hint">Eliminación por ronda: nadie reaparece · personaliza nombre/skin · P = Performance Lab</div>
 
   <script src="libs/anime-lite.js"></script>
   <script src="js/game.js"></script>

@@ -23,6 +23,9 @@ const UI = {
   message: document.getElementById("message"),
   lab: document.getElementById("lab"),
   crosshair: document.getElementById("crosshair"),
+  playerName: document.getElementById("playerName"),
+  playerSkin: document.getElementById("playerSkin"),
+  uiAccent: document.getElementById("uiAccent"),
 };
 
 const sliders = {
@@ -73,7 +76,10 @@ const settings = {
   particles: 0.65,
   scale: 0.75,
   fpsCap: 60,
-  floorDamage: true
+  floorDamage: true,
+  playerName: "Player",
+  playerSkin: "#050505",
+  uiAccent: "#ffd24d"
 };
 
 const bombTypes = [
@@ -87,7 +93,7 @@ const bombTypes = [
 const player = {
   x:-45,z:-34,yaw:.55,pitch:0,vx:0,vz:0,r:.72,
   hp:100,maxHp:100,st:100,sel:0,cd:0,dash:0,kills:0,score:0,
-  ammo:[0,0,0,0,0], frozen:0, burning:0
+  ammo:[0,0,0,0,0], frozen:0, burning:0, name:"Player", color:"#050505", dead:false
 };
 
 const cam = { x:0, y:EYE, z:0, yaw:0, pitch:0 };
@@ -109,11 +115,24 @@ function copyStartToLab(){
   settings.obstacles = +sliders.startObs.value;
   settings.packs = +sliders.startPacks.value;
   settings.scale = +sliders.startScale.value / 100;
+  syncProfileSettings();
   sliders.bots.value=settings.bots; labels.bots.textContent=settings.bots;
   sliders.obs.value=settings.obstacles; labels.obs.textContent=settings.obstacles;
   sliders.packs.value=settings.packs; labels.packs.textContent=settings.packs;
   sliders.scale.value=Math.round(settings.scale*100); labels.scale.textContent=Math.round(settings.scale*100)+"%";
 }
+
+function cleanPlayerName(name){
+  return (name || "Player").trim().replace(/[^\p{L}\p{N}_ -]/gu, "").slice(0, 16) || "Player";
+}
+function syncProfileSettings(){
+  settings.playerName = cleanPlayerName(UI.playerName?.value);
+  settings.playerSkin = UI.playerSkin?.value || "#050505";
+  settings.uiAccent = UI.uiAccent?.value || "#ffd24d";
+  document.documentElement.style.setProperty("--accent", settings.uiAccent);
+}
+[UI.playerName, UI.playerSkin, UI.uiAccent].forEach(el => el?.addEventListener("input", syncProfileSettings));
+syncProfileSettings();
 
 document.getElementById("applyLab").onclick = () => {
   settings.bots = +sliders.bots.value;
@@ -123,6 +142,7 @@ document.getElementById("applyLab").onclick = () => {
   settings.scale = +sliders.scale.value / 100;
   settings.fpsCap = +sliders.fpsCap.value;
   settings.floorDamage = sliders.floorDamage.checked;
+  syncProfileSettings();
   resize();
   reset();
 };
@@ -185,15 +205,16 @@ addEventListener("keyup", e => keys[e.code]=false);
 
 // ---------- World generation ----------
 function reset(){
+  syncProfileSettings();
   playing=true; paused=false; gameOver=false; matchTime=420; shake=0;
-  Object.assign(player,{x:-45,z:-34,yaw:.55,pitch:0,vx:0,vz:0,hp:100,st:100,sel:0,cd:0,dash:0,kills:0,score:0,ammo:[0,0,0,0,0],frozen:0,burning:0});
+  Object.assign(player,{x:-45,z:-34,yaw:.55,pitch:0,vx:0,vz:0,hp:100,st:100,sel:0,cd:0,dash:0,kills:0,score:0,ammo:[0,0,0,0,0],frozen:0,burning:0,name:settings.playerName,color:settings.playerSkin,dead:false});
   obstacles=[]; bots=[]; packs=[]; bombs=[]; particles=[]; craters=[]; zones=[]; texts=[];
   buildObstacles();
   buildBots();
   buildPacks();
   buildGrass();
   UI.start.style.display="none"; UI.pause.style.display="none"; UI.over.style.display="none";
-  message("Empiezas sin bombas: recoge packs", 2.2);
+  message(`${player.name}, sobrevives esta ronda. Los eliminados no reaparecen.`, 2.5);
   lockMouse();
 }
 
@@ -341,7 +362,8 @@ function update(dt){
   updateTexts(dt);
   hurtFlash=Math.max(0,hurtFlash-dt);
   if(player.hp < hpBefore - .6) hurtFlash=.16;
-  if(player.hp<=0) endGame("Te eliminaron. Puntos: "+player.score+" · KOs: "+player.kills);
+  if(player.hp<=0){ player.dead=true; endGame(`${player.name} fue eliminado. Puntos: ${player.score} · KOs: ${player.kills}`); }
+  else if(bots.every(b => b.dead)) endGame(`${player.name} ganó la ronda. Puntos: ${player.score} · KOs: ${player.kills}`);
 }
 function endGame(txt){
   gameOver=true; playing=false; UI.overText.textContent=txt; UI.over.style.display="block";
@@ -791,7 +813,7 @@ function drawText3D(t){
 function drawHand(){
   const x=W/2+155+hand.throw*60, y=H*.78+Math.sin(performance.now()/150)*4-hand.bob*80;
   ctx.save();
-  ctx.fillStyle="#050505"; ctx.strokeStyle="#303641"; ctx.lineWidth=5;
+  ctx.fillStyle=player.color; ctx.strokeStyle="#303641"; ctx.lineWidth=5;
   ctx.beginPath(); ctx.ellipse(x,y+55,58,92,.42,0,TAU); ctx.fill(); ctx.stroke();
   if(player.ammo[player.sel]>0){
     const t=bombTypes[player.sel];
@@ -824,8 +846,9 @@ function renderHUD(){
     el.classList.toggle("empty",player.ammo[i] <= 0);
     const q=el.querySelector(".qty"); if(q) q.textContent="x"+player.ammo[i];
   });
-  const board=[["TÚ",player.kills],...bots.map(b=>[b.name,b.dead?0:Math.max(1,Math.ceil(b.hp/28))])].sort((a,b)=>b[1]-a[1]).slice(0,4);
-  UI.score.innerHTML="<h3>BOMB ROYALE FPS</h3>"+board.map((b,i)=>`<div class="line" style="color:${i===0?"#ffd24d":"#dce2ea"}"><span>${i+1} ${b[0]}</span><b>${b[1]}</b></div>`).join("");
+  const aliveBots=bots.filter(b=>!b.dead).length;
+  const board=[[player.name,player.hp>0?Math.max(1,Math.ceil(player.hp/28)):0],...bots.map(b=>[b.name,b.dead?0:Math.max(1,Math.ceil(b.hp/28))])].sort((a,b)=>b[1]-a[1]).slice(0,4);
+  UI.score.innerHTML=`<h3>BOMB ROYALE FPS</h3><div class="line"><span>Ronda</span><b>${aliveBots}/${bots.length} bots</b></div>`+board.map((b,i)=>`<div class="line" style="color:${i===0?settings.uiAccent:"#dce2ea"}"><span>${i+1} ${b[0]}</span><b>${b[1]}</b></div>`).join("");
   drawMinimap();
 }
 function drawMinimap(){
@@ -838,7 +861,7 @@ function drawMinimap(){
   for(const p of packs)if(!p.dead){mctx.fillStyle=bombTypes[p.type].color;mctx.beginPath();mctx.arc(p.x/WORLD_W*2*r,p.z/WORLD_D*2*r,3,0,TAU);mctx.fill();}
   for(const b of bots)if(!b.dead){mctx.fillStyle="#ff5d4d";mctx.beginPath();mctx.arc(b.x/WORLD_W*2*r,b.z/WORLD_D*2*r,4,0,TAU);mctx.fill();}
   const px=player.x/WORLD_W*2*r,pz=player.z/WORLD_D*2*r;
-  mctx.fillStyle="#fff";mctx.beginPath();mctx.moveTo(px+Math.sin(player.yaw)*10,pz+Math.cos(player.yaw)*10);mctx.lineTo(px+Math.sin(player.yaw+2.35)*7,pz+Math.cos(player.yaw+2.35)*7);mctx.lineTo(px+Math.sin(player.yaw-2.35)*7,pz+Math.cos(player.yaw-2.35)*7);mctx.fill();
+  mctx.fillStyle=player.color;mctx.beginPath();mctx.moveTo(px+Math.sin(player.yaw)*10,pz+Math.cos(player.yaw)*10);mctx.lineTo(px+Math.sin(player.yaw+2.35)*7,pz+Math.cos(player.yaw+2.35)*7);mctx.lineTo(px+Math.sin(player.yaw-2.35)*7,pz+Math.cos(player.yaw-2.35)*7);mctx.fill();
   mctx.restore();mctx.strokeStyle="rgba(255,255,255,.3)";mctx.lineWidth=2;mctx.beginPath();mctx.arc(0,0,r-2,0,TAU);mctx.stroke();mctx.restore();
 }
 function message(txt, seconds=1.4){
