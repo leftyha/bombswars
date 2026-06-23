@@ -22,6 +22,7 @@ const UI = {
   inv: document.getElementById("inventory"),
   message: document.getElementById("message"),
   lab: document.getElementById("lab"),
+  crosshair: document.getElementById("crosshair"),
 };
 
 const sliders = {
@@ -62,7 +63,7 @@ const fmt = t => {
 let W = innerWidth, H = innerHeight, renderScale = 0.75;
 let playing=false, paused=false, gameOver=false, mouseLocked=false;
 let last=performance.now(), fpsTime=0, fpsFrames=0, fps=0, accumulator=0;
-let matchTime=420, shake=0;
+let matchTime=420, shake=0, hurtFlash=0;
 const keys = {};
 
 const settings = {
@@ -199,6 +200,17 @@ function reset(){
 function addObstacle(x,z,w,d,h,type,hp=100){
   obstacles.push({x,z,w,d,h,type,hp,maxHp:hp,dead:false,cracked:false});
 }
+function obstacleOverlaps(x,z,w,d,pad=1.2){
+  return obstacles.some(o => !o.dead && Math.abs(x-o.x) < (w+o.w)/2+pad && Math.abs(z-o.z) < (d+o.d)/2+pad);
+}
+function safePoint(radius=.7, avoidPlayer=0){
+  for(let tries=0; tries<80; tries++){
+    const x=rnd(-WORLD_W/2+3,WORLD_W/2-3), z=rnd(-WORLD_D/2+3,WORLD_D/2-3);
+    if(avoidPlayer && dist(x,z,player.x,player.z)<avoidPlayer) continue;
+    if(!blocked(x,z,radius)) return {x,z};
+  }
+  return {x:rnd(-12,12), z:rnd(-10,10)};
+}
 function buildObstacles(){
   // outer walls
   addObstacle(0,-WORLD_D/2,WORLD_W,1.2,3.4,"wall",999);
@@ -219,17 +231,21 @@ function buildObstacles(){
 
   let extra = Math.max(0, settings.obstacles - presets.length - 4);
   for(let i=0;i<extra;i++){
-    const x=rnd(-49,49), z=rnd(-38,38);
-    if(dist(x,z,player.x,player.z)<11) continue;
     const type = Math.random()<.45 ? "crate" : Math.random()<.65 ? "barrel" : "sand";
-    addObstacle(x,z,rnd(1.4,3.4),rnd(1.4,3.4),rnd(1.0,2.5),type,type==="barrel"?42:65);
+    const w=rnd(1.4,3.4), d=rnd(1.4,3.4);
+    let x,z,ok=false;
+    for(let tries=0; tries<35 && !ok; tries++){
+      x=rnd(-49,49); z=rnd(-38,38);
+      ok = dist(x,z,player.x,player.z)>=11 && !obstacleOverlaps(x,z,w,d,.55);
+    }
+    if(!ok) continue;
+    addObstacle(x,z,w,d,rnd(1.0,2.5),type,type==="barrel"?42:65);
   }
 }
 function buildBots(){
   const names=["BLAST","FUSE","TRAP","IGNIS","FROST","BOOM","MINER","CHAOS","NOVA","SPARK","ASH","ZERO","KILO","BETA"];
   for(let i=0;i<settings.bots;i++){
-    let x,z,tries=0;
-    do { x=rnd(-48,48); z=rnd(-36,36); tries++; } while(dist(x,z,player.x,player.z)<18 && tries<30);
+    const {x,z}=safePoint(.9,18);
     const type=i%5;
     bots.push({
       name:names[i%names.length]+(i>=names.length?i:""),
@@ -241,8 +257,7 @@ function buildBots(){
 }
 function buildPacks(){
   for(let i=0;i<settings.packs;i++){
-    let x,z,tries=0;
-    do { x=rnd(-50,50); z=rnd(-39,39); tries++; } while(blocked(x,z,.7) && tries<40);
+    const {x,z}=safePoint(.7,7);
     packs.push({x,z,type:i%5,dead:false,respawn:0,spin:rnd(0,TAU)});
   }
 }
@@ -293,6 +308,7 @@ function right(){ return {x:Math.cos(player.yaw), z:-Math.sin(player.yaw)}; }
 function update(dt){
   if(!playing || paused || gameOver) return;
   dt=Math.min(.05,dt);
+  const hpBefore = player.hp;
   matchTime-=dt;
   if(matchTime<=0) endGame("Tiempo terminado. Puntos: "+player.score+" · KOs: "+player.kills);
   updatePlayer(dt);
@@ -302,6 +318,8 @@ function update(dt){
   updateZones(dt);
   updateParticles(dt);
   updateTexts(dt);
+  hurtFlash=Math.max(0,hurtFlash-dt);
+  if(player.hp < hpBefore - .6) hurtFlash=.16;
   if(player.hp<=0) endGame("Te eliminaron. Puntos: "+player.score+" · KOs: "+player.kills);
 }
 function endGame(txt){
@@ -767,6 +785,9 @@ function drawHand(){
 
 // ---------- HUD ----------
 function renderHUD(){
+  document.body.classList.toggle("lowhp", playing && player.hp > 0 && player.hp < 32);
+  document.body.classList.toggle("hurting", hurtFlash > 0);
+  UI.crosshair.classList.toggle("cooldown", player.cd > 0 || player.ammo[player.sel] <= 0);
   UI.timer.textContent=fmt(matchTime);
   UI.hpText.textContent="♥ "+Math.max(0,Math.round(player.hp))+"/100";
   UI.hpBar.style.width=clamp(player.hp/player.maxHp*100,0,100)+"%";
@@ -774,6 +795,7 @@ function renderHUD(){
   UI.fpsText.textContent=`FPS ${fps} · Bots ${bots.filter(b=>!b.dead).length} · Obst. ${obstacles.filter(o=>!o.dead).length}`;
   [...UI.inv.children].forEach((el,i)=>{
     el.classList.toggle("active",i===player.sel);
+    el.classList.toggle("empty",player.ammo[i] <= 0);
     const q=el.querySelector(".qty"); if(q) q.textContent="x"+player.ammo[i];
   });
   const board=[["TÚ",player.kills],...bots.map(b=>[b.name,b.dead?0:Math.max(1,Math.ceil(b.hp/28))])].sort((a,b)=>b[1]-a[1]).slice(0,4);
