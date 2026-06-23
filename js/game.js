@@ -102,6 +102,73 @@ let hand = { throw:0, bob:0 };
 
 let obstacles=[], bots=[], packs=[], bombs=[], particles=[], craters=[], zones=[], texts=[], grass=[];
 
+
+// ---------- Audio procedural ----------
+const audio = (() => {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if(!AC) return { supported:false, resume(){}, startMusic(){}, stopMusic(){}, sfx(){}, update(){} };
+  let ctx, master, musicGain, sfxGain, noiseBuffer, musicTimer=0, musicOn=false, step=0, lastPlayerHp=player.hp;
+  const scale=[55,65.41,73.42,82.41,98,110,130.81,146.83];
+  function init(){
+    if(ctx) return;
+    ctx=new AC();
+    master=ctx.createGain(); musicGain=ctx.createGain(); sfxGain=ctx.createGain();
+    master.gain.value=.74; musicGain.gain.value=.22; sfxGain.gain.value=.82;
+    musicGain.connect(master); sfxGain.connect(master); master.connect(ctx.destination);
+    noiseBuffer=ctx.createBuffer(1, ctx.sampleRate*1.2, ctx.sampleRate);
+    const d=noiseBuffer.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  }
+  function resume(){ init(); if(ctx.state!=='running') ctx.resume(); }
+  function env(g, t, a=.005, d=.18, peak=.7, end=.0001){
+    g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(end,t); g.gain.linearRampToValueAtTime(peak,t+a); g.gain.exponentialRampToValueAtTime(end,t+a+d);
+  }
+  function tone(freq, dur, type='sine', gain=.35, dest=sfxGain, when=0, slide=0){
+    resume(); const t=ctx.currentTime+when, o=ctx.createOscillator(), g=ctx.createGain();
+    o.type=type; o.frequency.setValueAtTime(freq,t); if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(20,freq*slide),t+dur);
+    env(g,t,.006,dur,gain); o.connect(g); g.connect(dest); o.start(t); o.stop(t+dur+.04);
+  }
+  function noise(dur, gain=.25, filter=900, type='lowpass', when=0){
+    resume(); const t=ctx.currentTime+when, src=ctx.createBufferSource(), f=ctx.createBiquadFilter(), g=ctx.createGain();
+    src.buffer=noiseBuffer; f.type=type; f.frequency.setValueAtTime(filter,t); env(g,t,.004,dur,gain); src.connect(f); f.connect(g); g.connect(sfxGain); src.start(t); src.stop(t+dur+.04);
+  }
+  function distanceGain(x,z){ return clamp(1 - dist(player.x, player.z, x, z) / 62, .08, 1); }
+  function sfx(name, opts={}){
+    const vol=opts.vol ?? 1;
+    if(name==='throw'){ tone(170,.12,'square',.16*vol,sfxGain,0,.55); noise(.08,.08*vol,1800,'bandpass'); }
+    if(name==='select') tone(620,.06,'triangle',.12*vol,sfxGain,0,1.45);
+    if(name==='empty'){ tone(120,.09,'sawtooth',.11*vol,sfxGain,0,.72); tone(90,.06,'square',.06*vol,sfxGain,.08,.7); }
+    if(name==='pack'){ tone(520,.11,'triangle',.16*vol); tone(780,.13,'sine',.13*vol,sfxGain,.07); noise(.12,.05*vol,4200,'highpass'); }
+    if(name==='dash') noise(.22,.18*vol,700,'highpass');
+    if(name==='hurt'){ tone(86,.24,'sawtooth',.19*vol,sfxGain,0,.62); noise(.16,.10*vol,520,'lowpass'); }
+    if(name==='ko'){ tone(330,.12,'square',.14*vol); tone(196,.22,'triangle',.13*vol,sfxGain,.1,.82); }
+    if(name==='win'){ [523,659,784,1046].forEach((f,i)=>tone(f,.22,'triangle',.12*vol,sfxGain,i*.09)); }
+    if(name==='lose'){ [196,146,98].forEach((f,i)=>tone(f,.22,'sawtooth',.11*vol,sfxGain,i*.11,.9)); }
+    if(name==='explode'){
+      const g=vol*(opts.x===undefined?1:distanceGain(opts.x,opts.z));
+      tone(72,.42,'sine',.42*g,sfxGain,0,.38); tone(38,.55,'triangle',.32*g,sfxGain,0,.45); noise(.58,.38*g,260,'lowpass'); noise(.18,.20*g,2400,'bandpass');
+    }
+    if(name==='fire') noise(.48,.14*vol,1200,'bandpass');
+    if(name==='ice'){ tone(880,.24,'sine',.12*vol,sfxGain,0,1.7); noise(.32,.08*vol,5000,'highpass'); }
+  }
+  function musicTick(){
+    if(!musicOn || !ctx) return;
+    const beat=.34, root=scale[step%scale.length];
+    tone(root,.30,step%4===0?'sawtooth':'triangle',.055,musicGain,0,.98);
+    if(step%2===0) tone(root*2,.12,'square',.028,musicGain,.02,1.01);
+    if(step%8===4) tone(root*3,.18,'sine',.035,musicGain,.04,1.25);
+    if(step%4===0) noise(.06,.025,1400,'bandpass');
+    step=(step+1)%32;
+    musicTimer=setTimeout(musicTick, beat*1000);
+  }
+  function startMusic(){ resume(); if(musicOn) return; musicOn=true; step=0; musicTick(); }
+  function stopMusic(){ musicOn=false; clearTimeout(musicTimer); }
+  function update(){
+    if(player.hp < lastPlayerHp - .8) sfx('hurt', {vol:clamp((lastPlayerHp-player.hp)/22,.25,1)});
+    lastPlayerHp=player.hp;
+  }
+  return { supported:true, resume, startMusic, stopMusic, sfx, update };
+})();
+
 // ---------- Setup UI ----------
 function bindSlider(id, suffix="") {
   const el = sliders[id], lab = labels[id];
@@ -147,8 +214,8 @@ document.getElementById("applyLab").onclick = () => {
   resize();
   reset();
 };
-UI.play.onclick = () => { copyStartToLab(); reset(); };
-UI.again.onclick = () => reset();
+UI.play.onclick = () => { audio.resume(); copyStartToLab(); reset(); audio.startMusic(); };
+UI.again.onclick = () => { audio.resume(); reset(); audio.startMusic(); };
 
 function buildInventory(){
   UI.inv.innerHTML = "";
@@ -191,14 +258,16 @@ addEventListener("keydown", e => {
   if(e.code==="Escape" && playing && !gameOver){
     paused = !paused;
     UI.pause.style.display = paused ? "block" : "none";
+    if(paused) audio.stopMusic(); else audio.startMusic();
   }
   if(e.code==="KeyP") UI.lab.classList.toggle("hidden");
-  if(e.code==="KeyR") reset();
+  if(e.code==="KeyR"){ reset(); audio.startMusic(); }
   if(e.code.startsWith("Digit")){
     const n=Number(e.code.slice(5))-1;
     if(n>=0 && n<bombTypes.length){
       player.sel=n;
       message(`${bombTypes[n].name} seleccionado`, .8);
+      audio.sfx("select");
     }
   }
 });
@@ -397,6 +466,7 @@ function update(dt){
   updateZones(dt);
   updateParticles(dt);
   updateTexts(dt);
+  audio.update();
   hurtFlash=Math.max(0,hurtFlash-dt);
   if(player.hp < hpBefore - .6) hurtFlash=.16;
   if(player.hp<=0){ player.dead=true; endGame(`${player.name} fue eliminado. Puntos: ${player.score} · KOs: ${player.kills}`); }
@@ -404,6 +474,7 @@ function update(dt){
 }
 function endGame(txt){
   gameOver=true; playing=false; UI.overText.textContent=txt; UI.over.style.display="block";
+  audio.stopMusic(); audio.sfx(txt.includes("ganó") ? "win" : "lose");
   document.exitPointerLock?.();
 }
 function updatePlayer(dt){
@@ -421,7 +492,7 @@ function updatePlayer(dt){
   player.vx+=(fw.x*f+rt.x*s)*speed*9*dt;
   player.vz+=(fw.z*f+rt.z*s)*speed*9*dt;
   if(keys.Space&&player.dash<=0&&player.st>24){
-    player.vx+=fw.x*19;player.vz+=fw.z*19;player.st-=24;player.dash=.85; spawnParticles(player.x,.3,player.z,16,"dust");
+    player.vx+=fw.x*19;player.vz+=fw.z*19;player.st-=24;player.dash=.85; spawnParticles(player.x,.3,player.z,16,"dust"); audio.sfx("dash");
   }
   player.vx*=Math.pow(.08,dt); player.vz*=Math.pow(.08,dt);
   player.x+=player.vx*dt; player.z+=player.vz*dt; collide(player);
@@ -475,6 +546,7 @@ function killBot(b){
   player.kills++; player.score+=100;
   spawnText(b.x,2.5,b.z,"KO","#7dff75");
   spawnParticles(b.x,1.0,b.z,18,"debris",b.color);
+  audio.sfx("ko");
 }
 function botThrow(b,d){
   let idx = preferredBomb(b);
@@ -495,6 +567,7 @@ function collectPack(p,who){
     player.ammo[p.type]+=add; player.sel=p.type;
     message(`Pack ${bombTypes[p.type].name} +${add}`,1.2);
     anime({targets:hand, bob:.18, duration:160, easing:"easeOutQuad", complete:()=>anime({targets:hand,bob:0,duration:250})});
+    audio.sfx("pack");
   }else who.ammo[p.type]+=add;
   spawnParticles(p.x,.6,p.z,14,"spark",bombTypes[p.type].color);
 }
@@ -504,12 +577,13 @@ function updatePacks(dt){
 function throwPlayerBomb(){
   if(player.cd>0) return;
   const i=player.sel, t=bombTypes[i];
-  if(player.ammo[i]<=0){message(`No tienes ${t.name}. Busca packs.`,1.3); return;}
+  if(player.ammo[i]<=0){message(`No tienes ${t.name}. Busca packs.`,1.3); audio.sfx("empty"); return;}
   const cp=Math.cos(player.pitch+.04), fx=Math.sin(player.yaw)*cp, fy=Math.sin(player.pitch+.04), fz=Math.cos(player.yaw)*cp;
   if(t.id==="trap") addBomb(player.x+Math.sin(player.yaw)*1.1,.22,player.z+Math.cos(player.yaw)*1.1,0,0,0,i,"player",true);
   else addBomb(player.x+fx*.8,EYE-.1+fy*.25,player.z+fz*.8,fx*t.spd,fy*t.spd+4.4,fz*t.spd,i,"player",false);
   player.ammo[i]--; player.cd=.33;
   anime({targets:hand, throw:1, duration:110, easing:"easeOutQuad", complete:()=>anime({targets:hand, throw:0, duration:160})});
+  audio.sfx("throw");
 }
 function addBomb(x,y,z,vx,vy,vz,type,owner,placed=false){
   const t=bombTypes[type];
@@ -552,6 +626,9 @@ function explode(b){
   if(settings.floorDamage){ craters.push({x:b.x,z:b.z,r:t.rad*rnd(.55,.95),life:34,type:t.id}); }
   if(t.id==="fire") zones.push({kind:"fire",x:b.x,z:b.z,r:t.rad,life:5.2,max:5.2});
   if(t.id==="ice") zones.push({kind:"ice",x:b.x,z:b.z,r:t.rad,life:5.8,max:5.8});
+  audio.sfx("explode", {x:b.x, z:b.z, vol:t.id==="trap"?.85:1});
+  if(t.id==="fire") audio.sfx("fire");
+  if(t.id==="ice") audio.sfx("ice");
 }
 function spawnExplosion(x,y,z,t){
   particles.push({x,y,z,vx:0,vy:0,vz:0,type:"blast",color:t.color,r:0,maxR:t.rad,life:.42,max:.42});
