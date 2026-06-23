@@ -16,6 +16,10 @@ Controles:
 - R: reiniciar
 - Esc: pausa / liberar mouse
 
+## Plan multijugador
+
+La planificación para evolucionar el prototipo hacia salas online, escalado tipo MMO, mejoras de jugabilidad y monetización está en [`docs/multiplayer-roadmap.md`](docs/multiplayer-roadmap.md).
+
 ## Diseño técnico
 Esta versión usa Canvas pseudo‑3D en lugar de WebGL pesado.  
 Incluye `libs/anime-lite.js`, un tweener local estilo anime.js para animaciones simples de mano/HUD sin depender de CDN.
