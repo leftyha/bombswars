@@ -213,10 +213,10 @@ function safePoint(radius=.7, avoidPlayer=0){
 }
 function buildObstacles(){
   // outer walls
-  addObstacle(0,-WORLD_D/2,WORLD_W,1.2,3.4,"wall",999);
-  addObstacle(0, WORLD_D/2,WORLD_W,1.2,3.4,"wall",999);
-  addObstacle(-WORLD_W/2,0,1.2,WORLD_D,3.4,"wall",999);
-  addObstacle( WORLD_W/2,0,1.2,WORLD_D,3.4,"wall",999);
+  addObstacle(0,-WORLD_D/2,WORLD_W,1.6,7.2,"wall",999);
+  addObstacle(0, WORLD_D/2,WORLD_W,1.6,7.2,"wall",999);
+  addObstacle(-WORLD_W/2,0,1.6,WORLD_D,7.2,"wall",999);
+  addObstacle( WORLD_W/2,0,1.6,WORLD_D,7.2,"wall",999);
 
   const presets = [
     [-42,-24,14,3,3.2,"container",180],[-30,-12,3,16,3.4,"concrete",220],[-15,-32,12,3,3.2,"container",180],
@@ -281,15 +281,36 @@ function cameraSpace(p){
   let lz2=dy*sp+lz*cp;
   return {x:lx,y:ly,z:lz2};
 }
-function project(p){
-  const v=cameraSpace(p);
-  if(v.z<0.12) return null;
+function projectCamera(v){
+  if(v.z<0.08) return null;
   const f=(H*.5)/Math.tan(FOV/2);
   return {x:W/2+v.x/v.z*f,y:H/2-v.y/v.z*f,z:v.z,scale:f/v.z};
 }
+function project(p){
+  return projectCamera(cameraSpace(p));
+}
+function clipCameraPoly(poly, near=.08){
+  const out=[];
+  for(let i=0;i<poly.length;i++){
+    const a=poly[i], b=poly[(i+1)%poly.length];
+    const ain=a.z>=near, bin=b.z>=near;
+    if(ain && bin) out.push(b);
+    else if(ain && !bin){
+      const t=(near-a.z)/(b.z-a.z);
+      out.push({x:lerp(a.x,b.x,t),y:lerp(a.y,b.y,t),z:near});
+    }else if(!ain && bin){
+      const t=(near-a.z)/(b.z-a.z);
+      out.push({x:lerp(a.x,b.x,t),y:lerp(a.y,b.y,t),z:near});
+      out.push(b);
+    }
+  }
+  return out;
+}
 function depthOf(pts){ let d=0; for(const p of pts)d+=cameraSpace(p).z; return d/pts.length; }
 function drawPoly(pts,color,stroke=null){
-  const ps=pts.map(project);
+  const clipped=clipCameraPoly(pts.map(cameraSpace));
+  if(clipped.length<3) return;
+  const ps=clipped.map(projectCamera);
   if(ps.some(p=>!p)) return;
   ctx.beginPath(); ctx.moveTo(ps[0].x,ps[0].y);
   for(let i=1;i<ps.length;i++) ctx.lineTo(ps[i].x,ps[i].y);
@@ -502,9 +523,8 @@ function applyDamage(x,z,r,dmg,owner,type){
     if(d<r){
       o.hp-=dmg*(1-d/r)+22;
       if(!o.cracked){o.cracked=true;}
-      if(o.hp<=0 && o.type!=="wall" && o.type!=="container" && o.type!=="concrete" && o.type!=="ruin" && o.type!=="tower"){
-        o.dead=true; spawnParticles(o.x,o.h*.55,o.z,Math.floor(26*settings.particles),"debris");
-      }
+      // Los obstáculos son cobertura fija estilo shooter: se agrietan, pero no desaparecen.
+      o.hp=Math.max(1,o.hp);
     }
   }
 }
@@ -616,23 +636,9 @@ function render(){
 }
 function drawBackground(){
   const sky=ctx.createLinearGradient(0,0,0,H);
-  sky.addColorStop(0,"#8fc5ed"); sky.addColorStop(.42,"#d4e3ec"); sky.addColorStop(.54,"#846e51"); sky.addColorStop(1,"#2d3929");
+  sky.addColorStop(0,"#89bde7"); sky.addColorStop(.55,"#c9dceb"); sky.addColorStop(1,"#e6edf2");
   ctx.fillStyle=sky; ctx.fillRect(0,0,W,H);
 
-  const horizon = H*(.54 + cam.pitch*.55);
-  ctx.fillStyle="rgba(55,70,80,.55)";
-  for(let i=0;i<7;i++){
-    const base = horizon + 24 + i*3;
-    ctx.beginPath();
-    ctx.moveTo(-40, H);
-    for(let x=-40;x<W+60;x+=80){
-      const y=base - Math.sin((x+i*113)*.012)*30 - (i%3)*13;
-      ctx.lineTo(x,y);
-    }
-    ctx.lineTo(W+40,H);
-    ctx.fillStyle=i%2?"rgba(54,62,66,.42)":"rgba(71,84,82,.35)";
-    ctx.fill();
-  }
   // clouds
   ctx.fillStyle="rgba(255,255,255,.18)";
   for(let i=0;i<8;i++){
@@ -642,20 +648,19 @@ function drawBackground(){
 }
 function drawGround(){
   const pts=[{x:-WORLD_W/2,y:0,z:-WORLD_D/2},{x:WORLD_W/2,y:0,z:-WORLD_D/2},{x:WORLD_W/2,y:0,z:WORLD_D/2},{x:-WORLD_W/2,y:0,z:WORLD_D/2}];
-  drawPoly(pts,"#4c5638");
+  drawPoly(pts,"#5b625f");
 
-  // perspective grid / nice floor detail
-  for(let gx=-56;gx<=56;gx+=4) drawLine3D({x:gx,y:.02,z:-44},{x:gx,y:.02,z:44},"rgba(255,255,255,.045)",1);
-  for(let gz=-44;gz<=44;gz+=4) drawLine3D({x:-56,y:.02,z:gz},{x:56,y:.02,z:gz},"rgba(255,255,255,.045)",1);
-
-  drawLine3D({x:-55,y:.03,z:18},{x:55,y:.03,z:-2},"rgba(72,48,31,.42)",18);
-  drawLine3D({x:-33,y:.03,z:-42},{x:-10,y:.03,z:42},"rgba(72,48,31,.34)",14);
+  // Piso real de arena: loseta de concreto, sin franjas tipo fondo corrido.
+  for(let gx=-56;gx<=56;gx+=4) drawLine3D({x:gx,y:.02,z:-44},{x:gx,y:.02,z:44},"rgba(255,255,255,.085)",1);
+  for(let gz=-44;gz<=44;gz+=4) drawLine3D({x:-56,y:.02,z:gz},{x:56,y:.02,z:gz},"rgba(255,255,255,.085)",1);
+  for(let gx=-56;gx<=56;gx+=16) drawLine3D({x:gx,y:.025,z:-44},{x:gx,y:.025,z:44},"rgba(0,0,0,.16)",2);
+  for(let gz=-44;gz<=44;gz+=16) drawLine3D({x:-56,y:.025,z:gz},{x:56,y:.025,z:gz},"rgba(0,0,0,.16)",2);
 }
 function circleGround(cx,cz,r,n=20,y=.02){
   const pts=[]; for(let i=0;i<n;i++){const a=i/n*TAU;pts.push({x:cx+Math.sin(a)*r,y,z:cz+Math.cos(a)*r});} return pts;
 }
 function colorFor(o){
-  const m={wall:"#27303b",container:"#526b84",concrete:"#96948c",sand:"#a48759",crate:"#8b613b",barrel:"#b96638",ruin:"#77756f",tower:"#6b5a42"};
+  const m={wall:"#3f4a55",container:"#526b84",concrete:"#96948c",sand:"#a48759",crate:"#8b613b",barrel:"#b96638",ruin:"#77756f",tower:"#6b5a42"};
   return m[o.type]||"#777";
 }
 function shade(hex,m){
@@ -674,6 +679,27 @@ function drawBox(o){
   ];
   faces.sort((a,b)=>depthOf(b[0])-depthOf(a[0]));
   for(const [pts,col] of faces) drawPoly(pts,col,"rgba(0,0,0,.35)");
+  if(o.type==="wall"){
+    const seam="rgba(255,255,255,.16)", rim="rgba(8,12,18,.52)";
+    drawLine3D(p(x0,y1+.04,z0),p(x1,y1+.04,z0),rim,3);
+    drawLine3D(p(x1,y1+.04,z0),p(x1,y1+.04,z1),rim,3);
+    drawLine3D(p(x1,y1+.04,z1),p(x0,y1+.04,z1),rim,3);
+    drawLine3D(p(x0,y1+.04,z1),p(x0,y1+.04,z0),rim,3);
+    for(let y=1.8;y<y1-.2;y+=1.8){
+      drawLine3D(p(x0,y,z0+.04),p(x1,y,z0+.04),seam,1);
+      drawLine3D(p(x0,y,z1-.04),p(x1,y,z1-.04),seam,1);
+      drawLine3D(p(x0+.04,y,z0),p(x0+.04,y,z1),seam,1);
+      drawLine3D(p(x1-.04,y,z0),p(x1-.04,y,z1),seam,1);
+    }
+    for(let x=Math.ceil(x0/8)*8;x<x1;x+=8){
+      drawLine3D(p(x,.05,z0+.05),p(x,y1-.1,z0+.05),seam,1);
+      drawLine3D(p(x,.05,z1-.05),p(x,y1-.1,z1-.05),seam,1);
+    }
+    for(let z=Math.ceil(z0/8)*8;z<z1;z+=8){
+      drawLine3D(p(x0+.05,.05,z),p(x0+.05,y1-.1,z),seam,1);
+      drawLine3D(p(x1-.05,.05,z),p(x1-.05,y1-.1,z),seam,1);
+    }
+  }
   if(o.cracked){
     const p1=project({x:o.x-o.w*.25,y:o.h*.75,z:o.z+o.d/2+.02}), p2=project({x:o.x+o.w*.20,y:o.h*.35,z:o.z+o.d/2+.02});
     if(p1&&p2){ctx.strokeStyle="rgba(0,0,0,.72)";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo((p1.x+p2.x)/2+8,(p1.y+p2.y)/2-12);ctx.lineTo(p2.x,p2.y);ctx.stroke();}
