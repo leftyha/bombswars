@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BombStick Arena FPS Optimizado</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <section id="start" class="modal">
+    <h1><span>BombStick</span> Arena FPS</h1>
+    <p>
+      Versión optimizada pseudo‑3D: se siente como shooter, pero usa Canvas ligero.
+      Empiezas sin bombas; debes recoger packs del campo.
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <b>Controles</b><br>
+        <kbd>Click</kbd> capturar mouse / lanzar · <kbd>Mouse</kbd> mirar<br>
+        <kbd>WASD</kbd> moverse · <kbd>Shift</kbd> correr · <kbd>Espacio</kbd> dash<br>
+        <kbd>1-5</kbd> elegir bomba · <kbd>P</kbd> panel performance
+      </div>
+      <div class="card">
+        <b>Packs de bombas</b><br>
+        Frag +10 · Sticky +5 · Trap +3 · Incendiaria +3 · Congelante +1<br>
+        Los bots también recogen packs y pelean solo con bombas.
+      </div>
+    </div>
+
+    <div class="grid settings">
+      <label>Jugadores/Bots <input id="startBots" type="range" min="0" max="40" value="14"><b id="startBotsVal">14</b></label>
+      <label>Obstáculos <input id="startObs" type="range" min="20" max="150" value="70"><b id="startObsVal">70</b></label>
+      <label>Packs <input id="startPacks" type="range" min="10" max="80" value="36"><b id="startPacksVal">36</b></label>
+      <label>Render scale <input id="startScale" type="range" min="45" max="100" value="75"><b id="startScaleVal">75%</b></label>
+    </div>
+
+    <button id="play">JUGAR PREVIEW OPTIMIZADA</button>
+  </section>
+
+  <section id="pause" class="modal small">
+    <h1>Pausa</h1>
+    <p><kbd>Esc</kbd> para continuar. <kbd>P</kbd> abre/cierra Performance Lab.</p>
+  </section>
+
+  <section id="over" class="modal small">
+    <h1>Fin de la ronda</h1>
+    <p id="overText"></p>
+    <button id="again">REINICIAR</button>
+  </section>
+
+  <aside id="lab" class="panel hidden">
+    <h3>Performance Lab</h3>
+    <label>Bots <input id="bots" type="range" min="0" max="60" value="14"><b id="botsVal">14</b></label>
+    <label>Obstáculos <input id="obs" type="range" min="20" max="180" value="70"><b id="obsVal">70</b></label>
+    <label>Packs <input id="packs" type="range" min="10" max="100" value="36"><b id="packsVal">36</b></label>
+    <label>Partículas <input id="parts" type="range" min="0" max="100" value="65"><b id="partsVal">65%</b></label>
+    <label>Render scale <input id="scale" type="range" min="40" max="100" value="75"><b id="scaleVal">75%</b></label>
+    <label>FPS cap <input id="fpsCap" type="range" min="30" max="120" value="60" step="10"><b id="fpsCapVal">60</b></label>
+    <label class="check"><input id="floorDamage" type="checkbox" checked> Daño visual del piso</label>
+    <button id="applyLab">Aplicar / reiniciar arena</button>
+    <p>Menos render scale y partículas = más rendimiento.</p>
+  </aside>
+
+  <div id="hud">
+    <div id="crosshair"><i></i></div>
+    <div id="score" class="hudbox"></div>
+    <div id="timerBox" class="hudbox"><span>FPS ARENA</span><b id="timer">07:00</b></div>
+    <canvas id="minimap" class="hudbox" width="180" height="180"></canvas>
+    <div id="status" class="hudbox">
+      <b id="hpText">♥ 100/100</b>
+      <div class="bar"><i id="hpBar"></i></div>
+      <div class="bar stam"><i id="stamBar"></i></div>
+      <small id="fpsText">FPS --</small>
+    </div>
+    <div id="inventory"></div>
+    <div id="message"></div>
+  </div>
+
+  <div id="hint">Empiezas sin bombas · recoge packs · obstáculos y piso se rompen visualmente · P = Performance Lab</div>
+
+  <script src="libs/anime-lite.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
