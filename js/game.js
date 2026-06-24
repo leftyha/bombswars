@@ -26,6 +26,10 @@ const UI = {
   playerName: document.getElementById("playerName"),
   playerSkin: document.getElementById("playerSkin"),
   uiAccent: document.getElementById("uiAccent"),
+  startMusicEnabled: document.getElementById("startMusicEnabled"),
+  startSfxEnabled: document.getElementById("startSfxEnabled"),
+  toggleMusic: document.getElementById("toggleMusic"),
+  toggleSfx: document.getElementById("toggleSfx"),
 };
 
 const sliders = {
@@ -40,6 +44,8 @@ const sliders = {
   scale: document.getElementById("scale"),
   fpsCap: document.getElementById("fpsCap"),
   floorDamage: document.getElementById("floorDamage"),
+  musicEnabled: document.getElementById("musicEnabled"),
+  sfxEnabled: document.getElementById("sfxEnabled"),
 };
 
 const labels = {};
@@ -63,7 +69,7 @@ const fmt = t => {
   return String(Math.floor(t/60)).padStart(2,"0")+":"+String(t%60).padStart(2,"0");
 };
 
-let W = innerWidth, H = innerHeight, renderScale = 0.75;
+let W = innerWidth, H = innerHeight, renderScale = 0.75, pixelRatio = 1;
 let playing=false, paused=false, gameOver=false, mouseLocked=false;
 let last=performance.now(), fpsTime=0, fpsFrames=0, fps=0, accumulator=0;
 let matchTime=420, hurtFlash=0;
@@ -78,6 +84,8 @@ const settings = {
   scale: 0.75,
   fpsCap: 60,
   floorDamage: true,
+  musicEnabled: true,
+  sfxEnabled: true,
   playerName: "Player",
   playerSkin: "#050505",
   uiAccent: "#ffd24d"
@@ -101,12 +109,13 @@ const cam = { x:0, y:EYE, z:0, yaw:0, pitch:0 };
 let hand = { throw:0, bob:0 };
 
 let obstacles=[], bots=[], packs=[], bombs=[], particles=[], craters=[], zones=[], texts=[], grass=[];
+let renderTick = 0;
 
 
 // ---------- Audio procedural ----------
 const audio = (() => {
   const AC = window.AudioContext || window.webkitAudioContext;
-  if(!AC) return { supported:false, resume(){}, startMusic(){}, stopMusic(){}, sfx(){}, update(){} };
+  if(!AC) return { supported:false, resume(){}, startMusic(){}, stopMusic(){}, setMusicEnabled(){}, setSfxEnabled(){}, sfx(){}, update(){} };
   let ctx, master, musicGain, sfxGain, noiseBuffer, musicTimer=0, musicOn=false, step=0, lastPlayerHp=player.hp;
   const scale=[55,65.41,73.42,82.41,98,110,130.81,146.83];
   function init(){
@@ -133,6 +142,7 @@ const audio = (() => {
   }
   function distanceGain(x,z){ return clamp(1 - dist(player.x, player.z, x, z) / 62, .08, 1); }
   function sfx(name, opts={}){
+    if(!settings.sfxEnabled) return;
     const vol=opts.vol ?? 1;
     if(name==='throw'){ tone(170,.12,'square',.16*vol,sfxGain,0,.55); noise(.08,.08*vol,1800,'bandpass'); }
     if(name==='select') tone(620,.06,'triangle',.12*vol,sfxGain,0,1.45);
@@ -151,7 +161,7 @@ const audio = (() => {
     if(name==='ice'){ tone(880,.24,'sine',.12*vol,sfxGain,0,1.7); noise(.32,.08*vol,5000,'highpass'); }
   }
   function musicTick(){
-    if(!musicOn || !ctx) return;
+    if(!settings.musicEnabled || !musicOn || !ctx) return;
     const beat=.34, root=scale[step%scale.length];
     tone(root,.30,step%4===0?'sawtooth':'triangle',.055,musicGain,0,.98);
     if(step%2===0) tone(root*2,.12,'square',.028,musicGain,.02,1.01);
@@ -160,13 +170,15 @@ const audio = (() => {
     step=(step+1)%32;
     musicTimer=setTimeout(musicTick, beat*1000);
   }
-  function startMusic(){ resume(); if(musicOn) return; musicOn=true; step=0; musicTick(); }
+  function startMusic(){ if(!settings.musicEnabled) return; resume(); if(musicOn) return; musicOn=true; step=0; musicTick(); }
   function stopMusic(){ musicOn=false; clearTimeout(musicTimer); }
+  function setMusicEnabled(enabled){ settings.musicEnabled = !!enabled; if(!settings.musicEnabled) stopMusic(); else if(playing && !paused && !gameOver) startMusic(); }
+  function setSfxEnabled(enabled){ settings.sfxEnabled = !!enabled; }
   function update(){
     if(player.hp < lastPlayerHp - .8) sfx('hurt', {vol:clamp((lastPlayerHp-player.hp)/22,.25,1)});
     lastPlayerHp=player.hp;
   }
-  return { supported:true, resume, startMusic, stopMusic, sfx, update };
+  return { supported:true, resume, startMusic, stopMusic, setMusicEnabled, setSfxEnabled, sfx, update };
 })();
 
 // ---------- Setup UI ----------
@@ -184,6 +196,9 @@ function copyStartToLab(){
   settings.packs = +sliders.startPacks.value;
   settings.scale = +sliders.startScale.value / 100;
   syncProfileSettings();
+  settings.musicEnabled = !!UI.startMusicEnabled?.checked;
+  settings.sfxEnabled = !!UI.startSfxEnabled?.checked;
+  syncAudioControls();
   sliders.bots.value=settings.bots; labels.bots.textContent=settings.bots;
   sliders.obs.value=settings.obstacles; labels.obs.textContent=settings.obstacles;
   sliders.packs.value=settings.packs; labels.packs.textContent=settings.packs;
@@ -200,7 +215,30 @@ function syncProfileSettings(){
   document.documentElement.style.setProperty("--accent", settings.uiAccent);
 }
 [UI.playerName, UI.playerSkin, UI.uiAccent].forEach(el => el?.addEventListener("input", syncProfileSettings));
+function syncAudioControls(){
+  if(UI.startMusicEnabled) UI.startMusicEnabled.checked = settings.musicEnabled;
+  if(UI.startSfxEnabled) UI.startSfxEnabled.checked = settings.sfxEnabled;
+  if(sliders.musicEnabled) sliders.musicEnabled.checked = settings.musicEnabled;
+  if(sliders.sfxEnabled) sliders.sfxEnabled.checked = settings.sfxEnabled;
+  if(UI.toggleMusic){
+    UI.toggleMusic.textContent = settings.musicEnabled ? "♫ Música ON" : "♫ Música OFF";
+    UI.toggleMusic.classList.toggle("off", !settings.musicEnabled);
+    UI.toggleMusic.setAttribute("aria-pressed", String(settings.musicEnabled));
+  }
+  if(UI.toggleSfx){
+    UI.toggleSfx.textContent = settings.sfxEnabled ? "✦ Efectos ON" : "✦ Efectos OFF";
+    UI.toggleSfx.classList.toggle("off", !settings.sfxEnabled);
+    UI.toggleSfx.setAttribute("aria-pressed", String(settings.sfxEnabled));
+  }
+}
+function setMusicEnabled(enabled){ audio.setMusicEnabled(enabled); syncAudioControls(); }
+function setSfxEnabled(enabled){ audio.setSfxEnabled(enabled); syncAudioControls(); }
+[UI.startMusicEnabled, sliders.musicEnabled].forEach(el => el?.addEventListener("change", () => setMusicEnabled(el.checked)));
+[UI.startSfxEnabled, sliders.sfxEnabled].forEach(el => el?.addEventListener("change", () => setSfxEnabled(el.checked)));
+UI.toggleMusic?.addEventListener("click", () => setMusicEnabled(!settings.musicEnabled));
+UI.toggleSfx?.addEventListener("click", () => setSfxEnabled(!settings.sfxEnabled));
 syncProfileSettings();
+syncAudioControls();
 
 document.getElementById("applyLab").onclick = () => {
   settings.bots = +sliders.bots.value;
@@ -210,6 +248,9 @@ document.getElementById("applyLab").onclick = () => {
   settings.scale = +sliders.scale.value / 100;
   settings.fpsCap = +sliders.fpsCap.value;
   settings.floorDamage = sliders.floorDamage.checked;
+  audio.setMusicEnabled(sliders.musicEnabled.checked);
+  audio.setSfxEnabled(sliders.sfxEnabled.checked);
+  syncAudioControls();
   syncProfileSettings();
   resize();
   reset();
@@ -232,11 +273,12 @@ buildInventory();
 function resize(){
   W = innerWidth; H = innerHeight;
   renderScale = settings.scale;
-  canvas.width = Math.max(320, Math.floor(W * renderScale));
-  canvas.height = Math.max(200, Math.floor(H * renderScale));
+  pixelRatio = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.max(320, Math.floor(W * renderScale * pixelRatio));
+  canvas.height = Math.max(200, Math.floor(H * renderScale * pixelRatio));
   canvas.style.width = W+"px";
   canvas.style.height = H+"px";
-  ctx.setTransform(renderScale,0,0,renderScale,0,0);
+  ctx.setTransform(renderScale * pixelRatio,0,0,renderScale * pixelRatio,0,0);
 }
 addEventListener("resize", resize); resize();
 
@@ -747,6 +789,7 @@ function bombHitsObstacle(b,o){
 
 // ---------- Render ----------
 function render(){
+  renderTick++;
   setupCamera();
   drawBackground();
   drawGround();
@@ -783,6 +826,17 @@ function render(){
   for(const j of jobs) if(j.d>.1) j.draw();
 
   drawHand();
+  drawPostProcess();
+}
+function drawPostProcess(){
+  const pulse = Math.min(1, shakeState.trauma * 1.8 + (player.burning > 0 ? .18 : 0) + (player.frozen > 0 ? .12 : 0));
+  const vignette=ctx.createRadialGradient(W/2,H*.48,Math.min(W,H)*.18,W/2,H*.52,Math.max(W,H)*.72);
+  vignette.addColorStop(0,"rgba(0,0,0,0)");
+  vignette.addColorStop(.62,"rgba(0,0,0,.08)");
+  vignette.addColorStop(1,`rgba(0,0,0,${.42 + pulse*.16})`);
+  ctx.fillStyle=vignette; ctx.fillRect(0,0,W,H);
+  if(player.frozen > 0){ ctx.fillStyle="rgba(145,232,255,.08)"; ctx.fillRect(0,0,W,H); }
+  if(player.burning > 0){ ctx.fillStyle="rgba(255,96,28,.06)"; ctx.fillRect(0,0,W,H); }
 }
 function drawBackground(){
   const sky=ctx.createLinearGradient(0,0,0,H);
@@ -825,6 +879,7 @@ function colorFor(o){
   const m={wall:"#56616c",container:"#526b84",concrete:"#96948c",sand:"#a48759",crate:"#8b613b",barrel:"#b96638",ruin:"#77756f",tower:"#6b5a42"};
   return m[o.type]||"#777";
 }
+function fogColor(alpha){ return `rgba(211,223,224,${alpha})`; }
 function shade(hex,m){
   const c=hex.replace("#",""); let r=parseInt(c.slice(0,2),16),g=parseInt(c.slice(2,4),16),b=parseInt(c.slice(4,6),16);
   r=clamp(r*m|0,0,255); g=clamp(g*m|0,0,255); b=clamp(b*m|0,0,255);
@@ -861,6 +916,12 @@ function drawBox(o){
       drawLine3D(p(x0+.05,.05,z),p(x0+.05,y1-.1,z),seam,1);
       drawLine3D(p(x1-.05,.05,z),p(x1-.05,y1-.1,z),seam,1);
     }
+  }
+  const centerDepth = cameraSpace({x:o.x,y:o.h*.5,z:o.z}).z;
+  if(centerDepth > 18){
+    const fog = clamp((centerDepth - 18) / 70, 0, .32);
+    const face=[p(x0,y0,z1+.03),p(x1,y0,z1+.03),p(x1,y1,z1+.03),p(x0,y1,z1+.03)];
+    drawPoly(face, fogColor(fog));
   }
   if(o.cracked){
     const p1=project({x:o.x-o.w*.25,y:o.h*.75,z:o.z+o.d/2+.02}), p2=project({x:o.x+o.w*.20,y:o.h*.35,z:o.z+o.d/2+.02});

@@ -15,6 +15,7 @@ Controles:
 - P: abrir/cerrar Performance Lab
 - R: reiniciar
 - Esc: pausa / liberar mouse / pausa o reanuda la música
+- Botones Música/Efectos: activar o desactivar cada canal de audio por separado
 
 ## Plan multijugador
 
@@ -37,6 +38,7 @@ Los personajes usan un rig procedural inspirado en LoongBones/DragonBones (hueso
 
 ## Performance Lab
 Permite ajustar:
+- Música y efectos por separado
 - Cantidad de bots / jugadores
 - Cantidad de obstáculos
 - Cantidad de packs
