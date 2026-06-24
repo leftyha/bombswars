@@ -47,6 +47,8 @@
         <option value="#7dff75">Verde</option>
         <option value="#ff5d4d">Rojo</option>
       </select></label>
+      <label class="check"><input id="startMusicEnabled" type="checkbox" checked> Música</label>
+      <label class="check"><input id="startSfxEnabled" type="checkbox" checked> Efectos</label>
     </div>
 
     <div class="grid settings">
@@ -79,6 +81,8 @@
     <label>Render scale <input id="scale" type="range" min="40" max="100" value="75"><b id="scaleVal">75%</b></label>
     <label>FPS cap <input id="fpsCap" type="range" min="30" max="120" value="60" step="10"><b id="fpsCapVal">60</b></label>
     <label class="check"><input id="floorDamage" type="checkbox" checked> Daño visual del piso</label>
+    <label class="check"><input id="musicEnabled" type="checkbox" checked> Música</label>
+    <label class="check"><input id="sfxEnabled" type="checkbox" checked> Efectos</label>
     <button id="applyLab">Aplicar / reiniciar arena</button>
     <p>Menos render scale y partículas = más rendimiento.</p>
   </aside>
@@ -96,6 +100,10 @@
       <small id="fpsText">FPS --</small>
     </div>
     <div id="inventory"></div>
+    <div id="audioToggles" class="hudbox">
+      <button id="toggleMusic" type="button" aria-pressed="true">♫ Música ON</button>
+      <button id="toggleSfx" type="button" aria-pressed="true">✦ Efectos ON</button>
+    </div>
     <div id="message"></div>
   </div>
 
