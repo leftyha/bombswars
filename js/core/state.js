@@ -1,7 +1,7 @@
 let counters = new Map();
 export function nextId(prefix){ const n=(counters.get(prefix)||0)+1; counters.set(prefix,n); return `${prefix}_${n}`; }
 export function resetIds(){ counters = new Map(); }
-export function createGameState(seed=1){ return { version:1, seed, tick:0, mode:'Bomb Royale', phase:'WAITING', matchTime:420, players:[], bots:[], bombs:[], pickups:[], obstacles:[], zones:[], score:{}, events:[], stats:{ startedAt:0, duration:0 } }; }
+export function createGameState(seed=1){ return { version:1, seed, tick:0, mode:'Bomb Royale', phase:'WAITING', matchTime:420, players:[], bots:[], bombs:[], pickups:[], obstacles:[], zones:[], score:{}, events:[], stats:{ startedAt:0, duration:0 }, rng:seed }; }
 export function createActor(kind, data={}){ const id=data.id||nextId(kind); return { id, kind, name:data.name||id, x:data.x||0, z:data.z||0, vx:0, vz:0, yaw:data.yaw||0, pitch:0, hp:data.hp??100, maxHp:data.maxHp??100, ammo:data.ammo||[2,0,0,0,0], cooldowns:{ bomb:0, dash:0, pickup:0 }, flags:{ sprint:false, shield:false, dead:false }, stats:{ kos:0, deaths:0, bombsUsed:0 }, inputSeq:0, ...data }; }
 export function serializeState(state){ return JSON.stringify(state); }
 export function deserializeState(json){ return JSON.parse(json); }

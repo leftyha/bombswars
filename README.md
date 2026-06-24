@@ -53,3 +53,53 @@ Permite ajustar:
 - `js/game.js`
 - `libs/anime-lite.js`
 - `README.md`
+
+## Multijugador local/online MVP
+
+El repositorio incluye una primera versión de servidor autoritativo por salas para jugar con varios clientes web mediante WebSocket.
+
+### Requisitos
+
+- Node.js 18 o superior.
+- Dependencias instaladas con `npm install`.
+
+### Levantar el servidor
+
+```bash
+npm install
+npm run server
+```
+
+Por defecto el servidor escucha en `ws://localhost:8080`. Puedes cambiar el puerto y la clave de firma de resultados con variables de entorno:
+
+```bash
+PORT=9090 RESULT_SECRET=clave-local npm run server
+```
+
+### Probar multijugador
+
+1. Arranca el servidor con `npm run server`.
+2. Sirve el cliente estático desde la raíz del repo, por ejemplo:
+   ```bash
+   python3 -m http.server 8000
+   ```
+3. Abre varias pestañas en `http://localhost:8000`.
+4. Conecta cada cliente al servidor WebSocket `ws://localhost:8080` desde la integración de red o desde código usando `NetClient` en `js/net/client.js`.
+
+### Qué implementa el MVP
+
+- Salas casuales con estados `CREATING`, `WAITING`, `COUNTDOWN`, `LIVE`, `OVERTIME`, `FINISHED` y `CLOSING`.
+- Matchmaking casual por región, prioridad para salas existentes y creación automática de salas nuevas cuando no hay cupo.
+- Bots de relleno para salas casuales.
+- Simulación autoritativa a 20 ticks por segundo.
+- Inputs de cliente en vez de posiciones finales.
+- Snapshots compactos con tick, actores, bombas y eventos importantes.
+- Validación de munición, cooldowns, dash, pickups, daño, KOs y rate limits básicos.
+- Predicción/reconciliación/interpolación base en `js/net/client.js`.
+- Resultados firmados por servidor y persistencia JSON mínima de sesiones/estadísticas en `data/sessions.json`.
+- Telemetría base de ping, desconexiones, duración, KOs por minuto, bytes por jugador y tiempo de tick.
+
+### Arquitectura y roadmap
+
+- Diseño implementado: [`docs/multiplayer-architecture.md`](docs/multiplayer-architecture.md).
+- Plan completo hacia producción/MMO-like: [`docs/multiplayer-roadmap.md`](docs/multiplayer-roadmap.md).
