@@ -58,6 +58,10 @@ const WORLD_W = 112;
 const WORLD_D = 88;
 const EYE = 1.62;
 const FOV = 78 * Math.PI / 180;
+const SIM_TICK_RATE = 20;
+const SIM_DT = 1 / SIM_TICK_RATE;
+let entitySeq = 0;
+const nextEntityId = prefix => `${prefix}_${++entitySeq}`;
 
 const rnd = (a,b)=>a+Math.random()*(b-a);
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
@@ -317,6 +321,8 @@ addEventListener("keyup", e => keys[e.code]=false);
 
 // ---------- World generation ----------
 function reset(){
+  entitySeq=0;
+  player.id="player_1";
   syncProfileSettings();
   playing=true; paused=false; gameOver=false; matchTime=420; resetShake();
   Object.assign(player,{x:-45,z:-34,yaw:.55,pitch:0,vx:0,vz:0,hp:100,st:100,sel:0,cd:0,dash:0,kills:0,score:0,ammo:[0,0,0,0,0],frozen:0,burning:0,name:settings.playerName,color:settings.playerSkin,dead:false});
@@ -331,7 +337,7 @@ function reset(){
 }
 
 function addObstacle(x,z,w,d,h,type,hp=100){
-  obstacles.push({x,z,w,d,h,type,hp,maxHp:hp,dead:false,cracked:false});
+  obstacles.push({id:nextEntityId("obstacle"),x,z,w,d,h,type,hp,maxHp:hp,dead:false,cracked:false});
 }
 function obstacleOverlaps(x,z,w,d,pad=1.2){
   return obstacles.some(o => !o.dead && Math.abs(x-o.x) < (w+o.w)/2+pad && Math.abs(z-o.z) < (d+o.d)/2+pad);
@@ -392,6 +398,7 @@ function buildBots(){
     const {x,z}=safePoint(.9,18);
     const type=i%5;
     bots.push({
+      id:nextEntityId("bot"),
       name:names[i%names.length]+(i>=names.length?i:""),
       x,z,vx:0,vz:0,r:.58,hp: i%7===0?130:80, maxHp:i%7===0?130:80,
       speed:i%7===0?3.4:rnd(4.2,6.5), color:["#ff5d4d","#70d6ff","#ffd24d","#ff6a20","#91e8ff"][type],
@@ -402,7 +409,7 @@ function buildBots(){
 function buildPacks(){
   for(let i=0;i<settings.packs;i++){
     const {x,z}=safePoint(.7,7);
-    packs.push({x,z,type:i%5,dead:false,respawn:0,spin:rnd(0,TAU)});
+    packs.push({id:nextEntityId("pickup"),x,z,type:i%5,dead:false,respawn:0,spin:rnd(0,TAU)});
   }
 }
 function buildGrass(){
@@ -629,7 +636,7 @@ function throwPlayerBomb(){
 }
 function addBomb(x,y,z,vx,vy,vz,type,owner,placed=false){
   const t=bombTypes[type];
-  bombs.push({x,y,z,vx,vy,vz,type,owner,r:.26,timer:placed&&t.id==="trap"?999:t.fuse,age:0,stuck:placed,armed:placed?.45:0,mini:false});
+  bombs.push({id:nextEntityId("bomb"),x,y,z,vx,vy,vz,type,owner,r:.26,timer:placed&&t.id==="trap"?999:t.fuse,age:0,stuck:placed,armed:placed?.45:0,mini:false});
   spawnParticles(x,y,z,5,"spark",t.color);
 }
 function updateBombs(dt){
@@ -1092,14 +1099,18 @@ function loop(now){
   const rawDt=(now-last)/1000; last=now;
   fpsTime+=rawDt; fpsFrames++;
   if(fpsTime>=.5){fps=Math.round(fpsFrames/fpsTime);fpsFrames=0;fpsTime=0;}
-  const cap = 1/settings.fpsCap;
-  accumulator += rawDt;
-  if(accumulator >= cap){
-    const dt = Math.min(.05, accumulator);
-    accumulator=0;
-    update(dt);
+  accumulator += Math.min(.25, rawDt);
+  let steps = 0;
+  while(accumulator >= SIM_DT && steps < 5){
+    update(SIM_DT);
+    accumulator -= SIM_DT;
+    steps++;
+  }
+  const renderInterval = 1/settings.fpsCap;
+  if(!loop.lastRender || now - loop.lastRender >= renderInterval * 1000){
     render();
     renderHUD();
+    loop.lastRender = now;
   }
   requestAnimationFrame(loop);
 }
