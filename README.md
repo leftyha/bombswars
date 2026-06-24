@@ -70,21 +70,18 @@ npm install
 npm run server
 ```
 
-Por defecto el servidor escucha en `ws://localhost:8080`. Puedes cambiar el puerto y la clave de firma de resultados con variables de entorno:
+Por defecto el servidor escucha en `http://0.0.0.0:8080`, sirve el cliente web y acepta WebSocket en la misma dirección. Desde otra máquina abre `http://IP-DE-LA-MAQUINA:8080`, marca **Multijugador** y deja vacío el campo Servidor para que use esa misma dirección automáticamente. Puedes cambiar el puerto, host y la clave de firma de resultados con variables de entorno:
 
 ```bash
-PORT=9090 RESULT_SECRET=clave-local npm run server
+HOST=0.0.0.0 PORT=9090 RESULT_SECRET=clave-local npm run server
 ```
 
 ### Probar multijugador
 
 1. Arranca el servidor con `npm run server`.
-2. Sirve el cliente estático desde la raíz del repo, por ejemplo:
-   ```bash
-   python3 -m http.server 8000
-   ```
-3. Abre varias pestañas en `http://localhost:8000`.
-4. Conecta cada cliente al servidor WebSocket `ws://localhost:8080` desde la integración de red o desde código usando `NetClient` en `js/net/client.js`.
+2. Abre `http://localhost:8080` en la misma máquina o `http://IP-DE-LA-MAQUINA:8080` desde otras máquinas con acceso de red.
+3. Escribe tu nombre, marca **Multijugador** y pulsa **JUGAR / CONECTAR**.
+4. Si el cliente se sirve desde otra URL, rellena el campo Servidor con `ws://IP-DE-LA-MAQUINA:8080`; si no, déjalo vacío para usar la dirección actual.
 
 ### Qué implementa el MVP
 

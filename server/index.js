@@ -1,3 +1,7 @@
+import { createReadStream, existsSync, statSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { extname, join, normalize, resolve } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { Matchmaker } from '../js/core/rooms.js';
 import { stepSimulation } from '../js/core/simulation.js';
@@ -8,9 +12,29 @@ import { buildMatchResults } from '../js/core/results.js';
 import { JsonSessionStore } from '../js/core/persistence.js';
 import { createTelemetry, updateMatchTelemetry } from '../js/core/telemetry.js';
 
-const port = process.env.PORT || 8080;
+const port = Number(process.env.PORT || 8080);
+const host = process.env.HOST || '0.0.0.0';
+const root = resolve(process.env.PUBLIC_DIR || '.');
 const resultSecret = process.env.RESULT_SECRET || 'dev-secret';
-const wss = new WebSocketServer({ port });
+const mime = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml' };
+
+await mkdir('./data', { recursive: true });
+
+function staticFile(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const pathname = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
+  const file = normalize(join(root, pathname));
+  if (!file.startsWith(root) || !existsSync(file) || !statSync(file).isFile()) {
+    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
+    return;
+  }
+  res.writeHead(200, { 'content-type': mime[extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache' });
+  createReadStream(file).pipe(res);
+}
+
+const server = createServer(staticFile);
+const wss = new WebSocketServer({ server });
 const mm = new Matchmaker();
 const clients = new Map();
 const limiter = new RateLimiter();
@@ -22,7 +46,7 @@ wss.on('connection', (ws, req) => {
   let room, player;
   clients.set(ws, { id, inputs: [], ip: req.socket.remoteAddress, bytes: 0 });
   ws.on('message', buf => {
-    const c = clients.get(ws); c.bytes += buf.length;
+    const c = clients.get(ws); if (!c) return; c.bytes += buf.length;
     let msg; try { msg = decode(buf); } catch { return; }
     if (!limiter.allow(`${c.ip}:conn`, 180, 1000)) return;
     if (msg.t === MSG.HELLO) {
@@ -52,8 +76,7 @@ setInterval(() => {
     stepSimulation(room.game, inputs, 1 / room.limits.tickRate);
     const tickMs = +(performance.now() - start).toFixed(2);
     updateMatchTelemetry(telemetry, room.game, tickMs);
-    const snap = { t: MSG.SNAPSHOT, roomId: room.id, ...compactSnapshot(room.game), telemetry: { serverTickMs: telemetry.serverTickMs }, tickTimeMs: tickMs };
-    const payload = encode(snap);
+    const payload = encode({ t: MSG.SNAPSHOT, roomId: room.id, ...compactSnapshot(room.game), telemetry: { serverTickMs: telemetry.serverTickMs }, tickTimeMs: tickMs });
     for (const [ws, c] of clients) if (ws.readyState === 1) { telemetry.bytesPerPlayer[c.id] = (telemetry.bytesPerPlayer[c.id] || 0) + payload.length; ws.send(payload); }
     if (room.game.matchTime <= 0 && room.state === 'LIVE') {
       room.state = 'FINISHED'; room.game.phase = 'FINISHED';
@@ -63,4 +86,8 @@ setInterval(() => {
     }
   }
 }, 50);
-console.log(`BombsWars room server listening on :${port}`);
+
+server.listen(port, host, () => {
+  console.log(`BombsWars server listening on http://${host}:${port}`);
+  console.log('Open this address from any machine that can reach it; WebSocket uses the same host automatically.');
+});

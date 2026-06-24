@@ -49,6 +49,8 @@
       </select></label>
       <label class="check"><input id="startMusicEnabled" type="checkbox" checked> Música</label>
       <label class="check"><input id="startSfxEnabled" type="checkbox" checked> Efectos</label>
+      <label class="check"><input id="multiplayerEnabled" type="checkbox"> Multijugador</label>
+      <label class="wide">Servidor <input id="serverAddress" type="text" value="" placeholder="auto: misma dirección"></label>
     </div>
 
     <div class="grid settings">
@@ -58,7 +60,8 @@
       <label>Render scale <input id="startScale" type="range" min="45" max="100" value="75"><b id="startScaleVal">75%</b></label>
     </div>
 
-    <button id="play">JUGAR PREVIEW OPTIMIZADA</button>
+    <button id="play">JUGAR / CONECTAR</button>
+    <p class="multiplayer-help">Para multijugador: ejecuta <code>npm run server</code>, abre la URL del servidor desde cada máquina y marca “Multijugador”. Si dejas el servidor vacío se usa automáticamente la misma dirección de la página.</p>
   </section>
 
   <section id="pause" class="modal small">
