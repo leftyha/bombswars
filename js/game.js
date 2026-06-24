@@ -28,6 +28,8 @@ const UI = {
   uiAccent: document.getElementById("uiAccent"),
   startMusicEnabled: document.getElementById("startMusicEnabled"),
   startSfxEnabled: document.getElementById("startSfxEnabled"),
+  multiplayerEnabled: document.getElementById("multiplayerEnabled"),
+  serverAddress: document.getElementById("serverAddress"),
   toggleMusic: document.getElementById("toggleMusic"),
   toggleSfx: document.getElementById("toggleSfx"),
 };
@@ -114,6 +116,45 @@ let hand = { throw:0, bob:0 };
 
 let obstacles=[], bots=[], packs=[], bombs=[], particles=[], craters=[], zones=[], texts=[], grass=[];
 let renderTick = 0;
+
+const net = { enabled:false, ws:null, playerId:null, roomId:null, seq:0, connected:false, lastInput:0, lastPing:0, ping:0, remoteIds:new Set() };
+function defaultServerAddress(){ return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`; }
+function wantedServerAddress(){ const raw=(UI.serverAddress?.value || "").trim(); return raw || defaultServerAddress(); }
+function connectMultiplayer(){
+  net.enabled = !!UI.multiplayerEnabled?.checked;
+  if(!net.enabled) return;
+  const url = wantedServerAddress().replace(/^http:/,"ws:").replace(/^https:/,"wss:");
+  try{ net.ws?.close(); }catch{}
+  net.ws = new WebSocket(url); net.connected=false;
+  net.ws.onopen = () => { net.connected=true; net.ws.send(JSON.stringify({t:"HELLO", name:settings.playerName, sessionId:localStorage.getItem("bombswarsSessionId")||undefined})); message(`Conectado a ${url}`, 2); };
+  net.ws.onclose = () => { net.connected=false; if(net.enabled && playing && !gameOver) setTimeout(connectMultiplayer, 1200); };
+  net.ws.onerror = () => message("No se pudo conectar al servidor multijugador", 2);
+  net.ws.onmessage = e => { try{ handleNetMessage(JSON.parse(e.data)); }catch{} };
+}
+function handleNetMessage(msg){
+  if(msg.t === "WELCOME"){ net.playerId=msg.playerId; net.roomId=msg.roomId; if(msg.session?.id) localStorage.setItem("bombswarsSessionId", msg.session.id); message(`Sala ${msg.roomId} · jugador ${msg.playerId}`, 2); return; }
+  if(msg.t === "PONG") { net.ping = Math.round(performance.now() - msg.clientTime); return; }
+  if(msg.t !== "SNAPSHOT") return;
+  const actors=[...(msg.players||[]), ...(msg.bots||[])];
+  const seen=new Set();
+  for(const a of actors){
+    if(a.id === net.playerId){ player.x=a.x; player.z=a.z; player.yaw=a.yaw; player.hp=a.hp; player.dead=!!a.dead; continue; }
+    seen.add(a.id);
+    let b=bots.find(x=>x.id===a.id);
+    if(!b){ b={ id:a.id, name:a.id, x:a.x, z:a.z, vx:0, vz:0, r:.58, hp:a.hp, maxHp:100, speed:0, color:a.id.startsWith("bot")?"#ff5d4d":"#70d6ff", ammo:[0,0,0,0,0], cd:999, path:0, dead:false, frozen:0, burning:0, stun:0, anim:0, throwAnim:0, yaw:a.yaw, lean:0, remote:true }; bots.push(b); }
+    b.vx=(a.x-b.x)*8; b.vz=(a.z-b.z)*8; b.x=lerp(b.x,a.x,.55); b.z=lerp(b.z,a.z,.55); b.yaw=a.yaw; b.hp=a.hp; b.dead=!!a.dead; b.remote=true;
+  }
+  bots = bots.filter(b => !b.remote || seen.has(b.id));
+}
+function sendNetInput(data){
+  if(!net.enabled || !net.connected || net.ws?.readyState!==1 || !net.playerId) return;
+  net.ws.send(JSON.stringify({t:"INPUT", playerId:net.playerId, seq:++net.seq, dt:SIM_DT, ...data}));
+}
+function tickNetwork(){
+  if(!net.enabled || !net.connected || net.ws?.readyState!==1) return;
+  const now=performance.now();
+  if(now-net.lastPing>1500){ net.lastPing=now; net.ws.send(JSON.stringify({t:"PING", clientTime:now})); }
+}
 
 
 // ---------- Audio procedural ----------
@@ -259,7 +300,7 @@ document.getElementById("applyLab").onclick = () => {
   resize();
   reset();
 };
-UI.play.onclick = () => { audio.resume(); copyStartToLab(); reset(); audio.startMusic(); };
+UI.play.onclick = () => { audio.resume(); copyStartToLab(); reset(); connectMultiplayer(); audio.startMusic(); };
 UI.again.onclick = () => { audio.resume(); reset(); audio.startMusic(); };
 
 function buildInventory(){
@@ -509,6 +550,7 @@ function update(dt){
   matchTime-=dt;
   if(matchTime<=0) endGame("Tiempo terminado. Puntos: "+player.score+" · KOs: "+player.kills);
   updatePlayer(dt);
+  if(net.enabled) tickNetwork();
   updateBots(dt);
   updateBombs(dt);
   updatePacks(dt);
@@ -543,12 +585,17 @@ function updatePlayer(dt){
   if(keys.Space&&player.dash<=0&&player.st>24){
     player.vx+=fw.x*19;player.vz+=fw.z*19;player.st-=24;player.dash=.85; spawnParticles(player.x,.3,player.z,16,"dust"); audio.sfx("dash");
   }
+  if(net.enabled){
+    const now=performance.now();
+    if(now-net.lastInput>50){ net.lastInput=now; sendNetInput({moveX:s, moveZ:f, yaw:player.yaw, pitch:player.pitch, sprint:keys.ShiftLeft||keys.ShiftRight, dash:keys.Space, throwBomb:false}); }
+  }
   player.vx*=Math.pow(.08,dt); player.vz*=Math.pow(.08,dt);
   player.x+=player.vx*dt; player.z+=player.vz*dt; collide(player);
   for(const p of packs) if(!p.dead&&dist(player.x,player.z,p.x,p.z)<1.45) collectPack(p,player);
 }
 function updateBots(dt){
   for(const b of bots){
+    if(b.remote) continue;
     if(b.dead) continue;
     b.cd-=dt; b.throwAnim=Math.max(0,b.throwAnim-dt); b.stun=Math.max(0,b.stun-dt);
     b.frozen=Math.max(0,b.frozen-dt); b.burning=Math.max(0,b.burning-dt);
@@ -624,6 +671,7 @@ function updatePacks(dt){
   for(const p of packs){ if(p.dead){p.respawn-=dt;if(p.respawn<=0)p.dead=false;} else p.spin+=dt; }
 }
 function throwPlayerBomb(){
+  sendNetInput({moveX:0, moveZ:0, yaw:player.yaw, pitch:player.pitch, sprint:false, dash:false, throwBomb:true});
   if(player.cd>0) return;
   const i=player.sel, t=bombTypes[i];
   if(player.ammo[i]<=0){message(`No tienes ${t.name}. Busca packs.`,1.3); audio.sfx("empty"); return;}
@@ -1064,7 +1112,7 @@ function renderHUD(){
   UI.hpText.textContent="♥ "+Math.max(0,Math.round(player.hp))+"/100";
   UI.hpBar.style.width=clamp(player.hp/player.maxHp*100,0,100)+"%";
   UI.stamBar.style.width=clamp(player.st,0,100)+"%";
-  UI.fpsText.textContent=`FPS ${fps} · Bots ${bots.filter(b=>!b.dead).length} · Obst. ${obstacles.filter(o=>!o.dead).length}`;
+  UI.fpsText.textContent=`FPS ${fps} · Bots ${bots.filter(b=>!b.dead).length} · Obst. ${obstacles.filter(o=>!o.dead).length}${net.enabled ? ` · ${net.connected ? "Online" : "Conectando"} ${net.ping}ms` : ""}`;
   [...UI.inv.children].forEach((el,i)=>{
     el.classList.toggle("active",i===player.sel);
     el.classList.toggle("empty",player.ammo[i] <= 0);
