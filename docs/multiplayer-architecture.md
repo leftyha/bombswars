@@ -42,3 +42,11 @@ This document maps the online roadmap to implemented project modules.
 
 - `GameState.stats` tracks match duration and actor stats track KOs, deaths, and bombs used.
 - Final result signing, account persistence, PostgreSQL, Redis/NATS, object storage, reporting, moderation, clans, hubs, seasons, and MMO-like services are intentionally staged as production follow-up work after the authoritative MVP is stable.
+
+## Implementación ampliada
+
+- `js/render/render.js`, `js/input/input.js`, `js/hud/hud.js` y `js/audio/effects.js` son puntos de entrada separados para seguir extrayendo el cliente monolítico sin cambiar la preview jugable.
+- `js/core/security.js` centraliza detección de inputs imposibles y rate limiting reusable por IP, cuenta o conexión.
+- `js/core/results.js` firma resultados de partida desde servidor y calcula posición final, puntuación, KOs, muertes, duración y bombas usadas.
+- `js/core/persistence.js` añade sesiones/cuentas mínimas con nombre, progreso, estadísticas base y espacios preparados para cosméticos, ranking y misiones.
+- `js/core/telemetry.js` agrega métricas base de partida y servidor para ping, desconexiones, duración, KOs por minuto, ancho de banda y tick time.
